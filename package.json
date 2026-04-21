@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "kimigraph": "./dist/bin/kimigraph.js",
-    "kg": "./dist/bin/kimigraph.js"
+    "kimigraph": "dist/bin/kimigraph.js",
+    "kg": "dist/bin/kimigraph.js"
   },
   "files": [
     "dist",
