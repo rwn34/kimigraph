@@ -53,6 +53,33 @@
   source: (string) @import.source
 ) @import.statement
 
+; Named imports: import { foo, bar } from './module'
+(import_statement
+  (import_clause
+    (named_imports
+      (import_specifier
+        name: (identifier) @import.name
+      )
+    )
+  )
+)
+
+; Default imports: import foo from './module'
+(import_statement
+  (import_clause
+    (identifier) @import.name
+  )
+)
+
+; Namespace imports: import * as foo from './module'
+(import_statement
+  (import_clause
+    (namespace_import
+      (identifier) @import.name
+    )
+  )
+)
+
 ; Export statements
 (export_statement) @export.statement
 

@@ -141,6 +141,74 @@ export class ReferenceResolver {
     return { targetId: null, strategy: 'no-file-node' };
   }
 
+  private importMapCache = new Map<string, Map<string, string>>();
+
+  private buildImportMap(filePath: string): Map<string, string> {
+    if (this.importMapCache.has(filePath)) {
+      return this.importMapCache.get(filePath)!;
+    }
+
+    const map = new Map<string, string>();
+    const absPath = path.join(this.projectRoot, filePath);
+    let source: string;
+    try {
+      source = fs.readFileSync(absPath, 'utf8');
+    } catch {
+      this.importMapCache.set(filePath, map);
+      return map;
+    }
+
+    // Named imports: import { foo, bar } from './module'
+    const namedImportRegex = /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]([^'"]+)['"]/g;
+    let m: RegExpExecArray | null;
+    while ((m = namedImportRegex.exec(source)) !== null) {
+      const names = m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop()!.trim());
+      const moduleSource = m[2];
+      for (const n of names) {
+        if (n) map.set(n, moduleSource);
+      }
+    }
+
+    // Default imports: import foo from './module'
+    const defaultImportRegex = /import\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g;
+    while ((m = defaultImportRegex.exec(source)) !== null) {
+      map.set(m[1], m[2]);
+    }
+
+    // Namespace imports: import * as foo from './module'
+    const namespaceImportRegex = /import\s*\*\s*as\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g;
+    while ((m = namespaceImportRegex.exec(source)) !== null) {
+      map.set(m[1], m[2]);
+    }
+
+    this.importMapCache.set(filePath, map);
+    return map;
+  }
+
+  private resolveModuleToFile(moduleSource: string, fromFile: string): string | null {
+    if (!moduleSource.startsWith('.') && !moduleSource.startsWith('/')) {
+      return null; // external module
+    }
+    const sourceDir = path.dirname(path.join(this.projectRoot, fromFile));
+    const candidates = [
+      path.join(sourceDir, moduleSource),
+      path.join(sourceDir, moduleSource + '.ts'),
+      path.join(sourceDir, moduleSource + '.tsx'),
+      path.join(sourceDir, moduleSource + '.js'),
+      path.join(sourceDir, moduleSource + '.jsx'),
+      path.join(sourceDir, moduleSource, 'index.ts'),
+      path.join(sourceDir, moduleSource, 'index.tsx'),
+      path.join(sourceDir, moduleSource, 'index.js'),
+      path.join(sourceDir, moduleSource, 'index.jsx'),
+    ];
+    for (const candidate of candidates) {
+      if (fs.existsSync(candidate)) {
+        return path.relative(this.projectRoot, candidate).replace(/\\/g, '/');
+      }
+    }
+    return null;
+  }
+
   private resolveCall(
     ref: UnresolvedRef,
     nodesByName: Map<string, Node[]>,
@@ -163,6 +231,22 @@ export class ReferenceResolver {
     );
     if (sameFileCiMatch) {
       return { targetId: sameFileCiMatch.id, strategy: 'same-file-ci' };
+    }
+
+    // Strategy 2.5: Import-aware resolution
+    const importMap = this.buildImportMap(ref.filePath);
+    const moduleSource = importMap.get(name);
+    if (moduleSource) {
+      const resolvedFile = this.resolveModuleToFile(moduleSource, ref.filePath);
+      if (resolvedFile) {
+        const fileNodes = nodesByFile.get(resolvedFile) ?? [];
+        const match = fileNodes.find(
+          (n) => n.name === name && ['function', 'method', 'class', 'variable'].includes(n.kind)
+        );
+        if (match) {
+          return { targetId: match.id, strategy: 'import-aware' };
+        }
+      }
     }
 
     // Strategy 3: Project-wide unique match (only if exactly one definition exists)
