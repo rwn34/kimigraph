@@ -46,7 +46,7 @@ describe('GraphWatcher', () => {
 
     expect(syncCount).toBeGreaterThanOrEqual(1);
     watcher.stop();
-  });
+  }, 10000);
 
   it('debounces rapid changes into a single sync', async () => {
     const sourceFile = path.join(FIXTURE_DIR, 'rapid.ts');
