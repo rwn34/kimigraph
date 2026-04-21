@@ -27,6 +27,7 @@ import { extractFromSource } from './extraction';
 import { initGrammars } from './extraction/grammar';
 import { GraphTraverser } from './graph';
 import { ContextBuilder } from './context';
+import { ReferenceResolver } from './resolution';
 import { sha256, readFileSafe, isExcludedPath, Mutex } from './utils';
 import { logInfo } from './errors';
 import * as fs from 'fs';
@@ -198,6 +199,16 @@ export class KimiGraph {
               this.queries.insertEdge(edge);
               edgesCreated++;
             }
+            for (const ref of result.unresolvedRefs) {
+              this.queries.insertUnresolvedRef(
+                ref.sourceId,
+                ref.refName,
+                ref.refKind,
+                ref.filePath,
+                ref.line,
+                ref.column
+              );
+            }
 
             this.queries.upsertFile({
               path: filePath,
@@ -278,6 +289,9 @@ export class KimiGraph {
           this.db.transaction(() => {
             for (const node of result.nodes) this.queries.upsertNode(node);
             for (const edge of result.edges) this.queries.insertEdge(edge);
+            for (const ref of result.unresolvedRefs) {
+              this.queries.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, ref.filePath, ref.line, ref.column);
+            }
             this.queries.upsertFile({
               path: filePath,
               contentHash: hash,
@@ -297,6 +311,9 @@ export class KimiGraph {
           this.db.transaction(() => {
             for (const node of result.nodes) this.queries.upsertNode(node);
             for (const edge of result.edges) this.queries.insertEdge(edge);
+            for (const ref of result.unresolvedRefs) {
+              this.queries.insertUnresolvedRef(ref.sourceId, ref.refName, ref.refKind, ref.filePath, ref.line, ref.column);
+            }
             this.queries.upsertFile({
               path: filePath,
               contentHash: hash,
@@ -451,34 +468,7 @@ export class KimiGraph {
   }
 
   private resolveReferences(): void {
-    const unresolved = this.queries.getUnresolvedRefs();
-    let resolved = 0;
-
-    for (const ref of unresolved) {
-      if (ref.ref_kind === 'function' || ref.ref_kind === 'method') {
-        // Strategy 1: exact name match
-        let target: Node | null = this.queries.findNodesByExactName(ref.ref_name, { limit: 1 })[0] ?? null;
-
-        // Strategy 2: case-insensitive
-        if (!target) {
-          const all = this.queries.getAllNodes();
-          target = all.find((n): n is Node => n.name.toLowerCase() === ref.ref_name.toLowerCase()) ?? null;
-        }
-
-        if (target) {
-          this.queries.insertEdge({
-            source: ref.source_id,
-            target: target.id,
-            kind: 'calls',
-            line: ref.line ?? undefined,
-            column: ref.column ?? undefined,
-          });
-          this.queries.deleteUnresolvedRef(ref.id);
-          resolved++;
-        }
-      }
-    }
-
-    logInfo(`Resolved ${resolved}/${unresolved.length} references`);
+    const resolver = new ReferenceResolver(this.queries, this.projectRoot);
+    resolver.resolve();
   }
 }

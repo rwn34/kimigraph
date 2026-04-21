@@ -16,6 +16,7 @@ import {
   Language,
   ExtractionResult,
   ExtractionError,
+  UnresolvedRef,
   detectLanguage,
 } from '../types';
 import { loadGrammar, loadQuery } from './grammar';
@@ -88,6 +89,7 @@ export async function extractFromSource(
     return {
       nodes: extractor.nodes,
       edges: extractor.edges,
+      unresolvedRefs: extractor.unresolvedRefs,
       errors: extractor.errors,
     };
   } catch (err) {
@@ -108,6 +110,7 @@ export async function extractFromSource(
 class Extractor {
   nodes: Node[] = [];
   edges: Edge[] = [];
+  unresolvedRefs: UnresolvedRef[] = [];
   errors: ExtractionError[] = [];
   private filePath: string;
   private source: string;
@@ -432,7 +435,14 @@ class Extractor {
     };
     this.addNode(node);
     this.addEdge(this.fileNodeId, id, 'contains');
-    this.addEdge(this.fileNodeId, this.makeUnresolvedId('module', source), 'imports');
+    this.unresolvedRefs.push({
+      sourceId: this.fileNodeId,
+      refName: source,
+      refKind: 'module',
+      filePath: this.filePath,
+      line: stmtNode.startPosition.row + 1,
+      column: stmtNode.startPosition.column,
+    });
   }
 
   private addExport(stmtNode: SyntaxNode): void {
@@ -473,8 +483,14 @@ class Extractor {
       current = current.parent;
     }
 
-    const targetId = this.makeUnresolvedId('function', targetName);
-    this.addEdge(sourceId, targetId, 'calls', line, col);
+    this.unresolvedRefs.push({
+      sourceId,
+      refName: targetName,
+      refKind: 'function',
+      filePath: this.filePath,
+      line,
+      column: col,
+    });
   }
 
   // ==========================================================================

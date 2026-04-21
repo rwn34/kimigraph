@@ -128,9 +128,19 @@ export interface ExtractionError {
   message: string;
 }
 
+export interface UnresolvedRef {
+  sourceId: string;
+  refName: string;
+  refKind: string;
+  filePath: string;
+  line?: number;
+  column?: number;
+}
+
 export interface ExtractionResult {
   nodes: Node[];
   edges: Edge[];
+  unresolvedRefs: UnresolvedRef[];
   errors: ExtractionError[];
 }
 
