@@ -78,12 +78,16 @@ describe('Agent Instructions', () => {
   it('writes AGENTS.md on init', async () => {
     const kg = await KimiGraph.init(FIXTURE_DIR);
 
-    const instructionsPath = path.join(FIXTURE_DIR, '.kimi', 'AGENTS.md');
-    expect(fs.existsSync(instructionsPath)).toBe(true);
+    const agentsPath = path.join(FIXTURE_DIR, '.kimi', 'AGENTS.md');
+    expect(fs.existsSync(agentsPath)).toBe(true);
 
-    const content = fs.readFileSync(instructionsPath, 'utf8');
+    const content = fs.readFileSync(agentsPath, 'utf8');
     expect(content).toContain('kimigraph_explore');
-    expect(content).toContain('PRIMARY tool');
+    expect(content).toContain('MANDATORY');
+
+    // Fallback instructions.md also written
+    const fallbackPath = path.join(FIXTURE_DIR, '.kimi', 'instructions.md');
+    expect(fs.existsSync(fallbackPath)).toBe(true);
 
     kg.close();
   });

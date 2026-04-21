@@ -183,6 +183,11 @@ export class ToolHandler {
     const kg = await this.getConnection(args.projectPath as string | undefined);
     if (!kg) return 'KimiGraph not initialized. Run `kimigraph init` in your project first.';
 
+    // Auto-sync if dirty before serving any query (ensures fresh graph)
+    if (kg.isDirty()) {
+      await kg.syncIfDirty();
+    }
+
     switch (toolName) {
       case 'kimigraph_search': {
         const limit = clampLimit(args.limit as number | undefined, 10);

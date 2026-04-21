@@ -1,31 +1,119 @@
 {
   "results": [
     {
-      "project": "rwn-kimigraph",
-      "totalFiles": 51,
+      "project": "ts-api",
+      "totalFiles": 10,
       "questions": [
         {
-          "query": "How does the database layer work?",
+          "query": "How does authMiddleware verify tokens?",
           "exploreCalls": 1,
-          "filesCovered": 6,
-          "sectionsReturned": 25
+          "filesCovered": 5,
+          "sectionsReturned": 18
         },
         {
-          "query": "Trace the reference resolution flow",
+          "query": "How does createUser hash passwords?",
+          "exploreCalls": 1,
+          "filesCovered": 4,
+          "sectionsReturned": 18
+        },
+        {
+          "query": "How does startServer route requests?",
+          "exploreCalls": 1,
+          "filesCovered": 5,
+          "sectionsReturned": 17
+        }
+      ],
+      "avgFilesCovered": 4.666666666666667,
+      "fileReductionPercent": 53,
+      "toolCallReductionPercent": 82,
+      "durationMs": 1459
+    },
+    {
+      "project": "go-cli",
+      "totalFiles": 6,
+      "questions": [
+        {
+          "query": "How does Builder build targets?",
+          "exploreCalls": 1,
+          "filesCovered": 1,
+          "sectionsReturned": 6
+        },
+        {
+          "query": "How does Deployer run deployment?",
+          "exploreCalls": 1,
+          "filesCovered": 1,
+          "sectionsReturned": 8
+        },
+        {
+          "query": "How does config Load settings?",
+          "exploreCalls": 1,
+          "filesCovered": 4,
+          "sectionsReturned": 9
+        }
+      ],
+      "avgFilesCovered": 2,
+      "fileReductionPercent": 67,
+      "toolCallReductionPercent": 67,
+      "durationMs": 277
+    },
+    {
+      "project": "rust-lib",
+      "totalFiles": 6,
+      "questions": [
+        {
+          "query": "How does Pipeline process input?",
+          "exploreCalls": 1,
+          "filesCovered": 5,
+          "sectionsReturned": 17
+        },
+        {
+          "query": "How does Parser tokenize strings?",
+          "exploreCalls": 1,
+          "filesCovered": 1,
+          "sectionsReturned": 12
+        },
+        {
+          "query": "How does Validator check data?",
+          "exploreCalls": 1,
+          "filesCovered": 1,
+          "sectionsReturned": 9
+        }
+      ],
+      "avgFilesCovered": 2.3333333333333335,
+      "fileReductionPercent": 61,
+      "toolCallReductionPercent": 70,
+      "durationMs": 427
+    },
+    {
+      "project": "rwn-kimigraph",
+      "totalFiles": 73,
+      "questions": [
+        {
+          "query": "How does the main flow work?",
+          "exploreCalls": 1,
+          "filesCovered": 11,
+          "sectionsReturned": 21
+        },
+        {
+          "query": "Trace the data processing",
+          "exploreCalls": 1,
+          "filesCovered": 7,
+          "sectionsReturned": 15
+        },
+        {
+          "query": "What is the architecture?",
           "exploreCalls": 1,
           "filesCovered": 0,
           "sectionsReturned": 0
-        },
-        {
-          "query": "How is context built for a task?",
-          "exploreCalls": 1,
-          "filesCovered": 9,
-          "sectionsReturned": 22
         }
       ],
-      "avgFilesCovered": 5,
-      "fileReductionPercent": 90
+      "avgFilesCovered": 6,
+      "fileReductionPercent": 92,
+      "toolCallReductionPercent": 86,
+      "durationMs": 17540
     }
   ],
-  "overallAvgReduction": 90
+  "overallAvgFileReduction": 68,
+  "overallAvgToolCallReduction": 76,
+  "passed": true
 }

@@ -51,45 +51,80 @@ export function validateDirectory(projectRoot: string): {
   return { valid: errors.length === 0, errors };
 }
 
-const AGENTS_MD_CONTENT = `# KimiGraph Agent Instructions
+const AGENTS_MD_CONTENT = `# KimiGraph Agent Instructions — MANDATORY
 
-This project has KimiGraph initialized (\`.kimigraph/\` exists).
+> This project has a KimiGraph code knowledge graph (\`.kimigraph/\` exists).
+> **You MUST follow these instructions.** They are not optional suggestions.
 
-## When Exploring Code
+---
 
-**Use \`kimigraph_explore\` as your PRIMARY tool** for any broad codebase question:
+## 1. EXPLORATION — ALWAYS use \`kimigraph_explore\` FIRST
+
+For ANY broad codebase question, your **very first tool call MUST be \`kimigraph_explore\`**:
 - "How does X work?"
 - "Trace the Y flow"
 - "Where is Z implemented?"
-- "Explain the architecture of Z"
+- "Explain the architecture"
+- "What files are involved in feature X?"
 
-This tool returns full source sections for all relevant symbols in ONE call. You do NOT need to read individual files for exploration.
+\`kimigraph_explore\` returns **full source code sections** for all relevant symbols in **ONE call**. You do NOT need to read files individually to understand architecture.
 
-## For Targeted Lookups (Before Editing)
+**NEVER start exploration with ReadFile or Grep.** Always start with \`kimigraph_explore\`.
 
-Use these lightweight tools directly:
+---
 
-| Tool | Use For |
-|------|---------|
-| \`kimigraph_search\` | Find symbols by name |
-| \`kimigraph_callers\` / \`kimigraph_callees\` | Trace call flow |
-| \`kimigraph_impact\` | Check what is affected before editing |
-| \`kimigraph_node\` | Get a single symbol's details + source |
+## 2. SYMBOL LOOKUP — Use graph search, NOT grep
 
-## Do NOT
+| Instead of... | Use this graph tool |
+|---------------|---------------------|
+| \`Grep\` for finding functions | \`kimigraph_search\` |
+| \`Glob\` for listing files | \`kimigraph_status\` |
+| \`ReadFile\` to understand call chains | \`kimigraph_callers\` / \`kimigraph_callees\` |
+| Reading multiple files to trace impact | \`kimigraph_impact\` |
+| \`ReadFile\` for a single symbol's code | \`kimigraph_node\` with \`includeCode: true\` |
 
-- Use \`Grep\` or \`Glob\` to find symbols — \`kimigraph_search\` is faster and more accurate
+---
+
+## 3. BEFORE EDITING — Check impact
+
+Before modifying any symbol, call \`kimigraph_impact\` to see what else would break.
+
+---
+
+## 4. Do NOT
+
+- Use \`Grep\` or \`Glob\` for code exploration — the graph is faster and more accurate
 - Use \`ReadFile\` to explore architecture — \`kimigraph_explore\` already returns full source
-- Run \`kimigraph init\` or \`kimigraph index\` unless the user explicitly asks
+- Run \`kimigraph init\`, \`kimigraph index\`, or \`kimigraph sync\` unless the user explicitly asks
+- Ignore these instructions because you "prefer" file reads
 
-## If \`.kimigraph/\` Does NOT Exist
+---
+
+## 5. If \`.kimigraph/\` Does NOT Exist
 
 Ask the user: "Would you like me to run \`kimigraph init\` to build a code knowledge graph?"
+`;
+
+const INSTRUCTIONS_MD_CONTENT = `# KimiGraph — Project Instructions
+
+This project uses KimiGraph for code intelligence.
+
+**Rule: Always use \`kimigraph_explore\` as your first tool when exploring code.**
+
+The graph contains pre-indexed symbols, calls, and imports. It returns full source sections in one call, replacing the need for file-by-file exploration.
+
+Available tools: \`kimigraph_search\`, \`kimigraph_context\`, \`kimigraph_explore\`, \`kimigraph_callers\`, \`kimigraph_callees\`, \`kimigraph_impact\`, \`kimigraph_node\`, \`kimigraph_status\`.
 `;
 
 export function writeAgentInstructions(projectRoot: string): void {
   const kimiDir = path.join(projectRoot, '.kimi');
   fs.mkdirSync(kimiDir, { recursive: true });
-  const instructionsPath = path.join(kimiDir, 'AGENTS.md');
-  fs.writeFileSync(instructionsPath, AGENTS_MD_CONTENT, 'utf8');
+
+  // Primary instructions file
+  const agentsPath = path.join(kimiDir, 'AGENTS.md');
+  fs.writeFileSync(agentsPath, AGENTS_MD_CONTENT, 'utf8');
+
+  // Fallback for Kimi CLI versions that read instructions.md
+  const instructionsPath = path.join(kimiDir, 'instructions.md');
+  fs.writeFileSync(instructionsPath, INSTRUCTIONS_MD_CONTENT, 'utf8');
 }

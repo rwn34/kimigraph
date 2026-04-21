@@ -107,4 +107,5 @@ describe('KimiGraph watch integration', () => {
     // After close, watcher should be stopped
     expect(kg.isDirty()).toBe(false);
   });
+
 });

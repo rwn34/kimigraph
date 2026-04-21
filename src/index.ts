@@ -154,6 +154,13 @@ export class KimiGraph {
     return this.watcher?.isDirty() ?? false;
   }
 
+  /** Sync if the graph is dirty (watcher detected changes). Called before queries. */
+  async syncIfDirty(): Promise<void> {
+    if (this.watcher?.isDirty()) {
+      await this.sync();
+    }
+  }
+
   // --------------------------------------------------------------------------
   // Indexing
   // --------------------------------------------------------------------------
