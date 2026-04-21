@@ -1,0 +1,284 @@
+/**
+ * MCP Tool definitions and handlers for KimiGraph.
+ */
+
+import { KimiGraph } from '../index';
+
+
+const MAX_OUTPUT = 15000;
+
+function truncate(s: string): string {
+  return s.length > MAX_OUTPUT ? s.slice(0, MAX_OUTPUT) + '\n...[truncated]' : s;
+}
+
+function clampLimit(value: number | undefined, defaultValue: number): number {
+  const n = typeof value === 'number' ? value : defaultValue;
+  return Math.max(1, Math.min(100, Math.round(n)));
+}
+
+function mapKind(kind: string): string {
+  if (kind === 'type_alias') return 'type';
+  return kind;
+}
+
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema: {
+    type: 'object';
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export const tools: ToolDefinition[] = [
+  {
+    name: 'kimigraph_search',
+    description: 'Quick symbol search by name. Returns locations only (no code). Use kimigraph_context for comprehensive task context.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Symbol name or partial name' },
+        kind: { type: 'string', description: 'Filter by node kind', enum: ['function', 'method', 'class', 'interface', 'type_alias', 'variable'] },
+        limit: { type: 'number', description: 'Max results 1-100 (default: 10)', default: 10 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'kimigraph_context',
+    description: 'PRIMARY TOOL: Build comprehensive context for a task or feature request. Returns entry points, related symbols, and key code — often enough to understand the codebase without additional tool calls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task: { type: 'string', description: 'Description of the task, bug, or feature' },
+        maxNodes: { type: 'number', description: 'Max symbols to include (default: 20)', default: 20 },
+        includeCode: { type: 'boolean', description: 'Include code snippets (default: true)', default: true },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['task'],
+    },
+  },
+  {
+    name: 'kimigraph_callers',
+    description: 'Find all functions/methods that call a specific symbol.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'Symbol name to find callers for' },
+        limit: { type: 'number', description: 'Max results 1-100 (default: 20)', default: 20 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['symbol'],
+    },
+  },
+  {
+    name: 'kimigraph_callees',
+    description: 'Find all functions/methods that a specific symbol calls.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'Symbol name to find callees for' },
+        limit: { type: 'number', description: 'Max results 1-100 (default: 20)', default: 20 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['symbol'],
+    },
+  },
+  {
+    name: 'kimigraph_impact',
+    description: 'Analyze what code would be affected by changing a symbol. Use before making changes.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'Symbol name to analyze impact for' },
+        depth: { type: 'number', description: 'Traversal depth (default: 2)', default: 2 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['symbol'],
+    },
+  },
+  {
+    name: 'kimigraph_node',
+    description: 'Get details about a specific symbol, optionally including its source code.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        symbol: { type: 'string', description: 'Symbol name to look up' },
+        includeCode: { type: 'boolean', description: 'Include source code (default: false)', default: false },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['symbol'],
+    },
+  },
+  {
+    name: 'kimigraph_status',
+    description: 'Check index health and statistics.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+];
+
+export class ToolHandler {
+  private defaultKg: KimiGraph | null;
+  private connections = new Map<string, KimiGraph>();
+
+  constructor(kg: KimiGraph | null) {
+    this.defaultKg = kg;
+  }
+
+  setDefaultKimiGraph(kg: KimiGraph): void {
+    this.defaultKg = kg;
+  }
+
+  closeAll(): void {
+    for (const kg of this.connections.values()) {
+      try { kg.close(); } catch { /* ignore */ }
+    }
+    this.connections.clear();
+  }
+
+  private async getConnection(projectPath?: string): Promise<KimiGraph | null> {
+    if (!projectPath) return this.defaultKg;
+    const resolved = require('path').resolve(projectPath);
+    if (this.connections.has(resolved)) return this.connections.get(resolved)!;
+    try {
+      const kg = await KimiGraph.open(resolved);
+      this.connections.set(resolved, kg);
+      return kg;
+    } catch {
+      return null;
+    }
+  }
+
+  async handle(toolName: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
+    try {
+      const text = await this.dispatch(toolName, args);
+      return { content: [{ type: 'text', text: truncate(text) }] };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
+    }
+  }
+
+  private async dispatch(toolName: string, args: Record<string, unknown>): Promise<string> {
+    const kg = await this.getConnection(args.projectPath as string | undefined);
+    if (!kg) return 'KimiGraph not initialized. Run `kimigraph init` in your project first.';
+
+    switch (toolName) {
+      case 'kimigraph_search': {
+        const limit = clampLimit(args.limit as number | undefined, 10);
+        const results = kg.searchNodes(args.query as string, { limit });
+        if (results.length === 0) return `No symbols found matching "${args.query}".`;
+        return results.map((r) =>
+          `${mapKind(r.node.kind)} ${r.node.name}\n  File: ${r.node.filePath}:${r.node.startLine}`
+        ).join('\n\n');
+      }
+
+      case 'kimigraph_context': {
+        const ctx = await kg.buildContext(args.task as string, {
+          maxNodes: (args.maxNodes as number) ?? 20,
+          includeCode: (args.includeCode as boolean) ?? true,
+        });
+        const lines: string[] = [ctx.summary, ''];
+        if (ctx.entryPoints.length === 0) {
+          lines.push('No matching symbols found.');
+        } else {
+          lines.push('### Entry Points');
+          for (const n of ctx.entryPoints) {
+            lines.push(`- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`);
+            if (ctx.codeSnippets.has(n.id)) {
+              lines.push('```', ctx.codeSnippets.get(n.id)!, '```');
+            }
+          }
+          if (ctx.relatedNodes.length > 0) {
+            lines.push('', '### Related Symbols');
+            for (const n of ctx.relatedNodes.slice(0, 10)) {
+              lines.push(`- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`);
+            }
+          }
+        }
+        return lines.join('\n');
+      }
+
+      case 'kimigraph_callers': {
+        const limit = clampLimit(args.limit as number | undefined, 20);
+        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
+        const node = results[0].node;
+        const callers = kg.getCallers(node.id, limit);
+        if (callers.length === 0) return `No callers found for \`${node.name}\`.`;
+        return `Callers of \`${node.name}\`:\n` + callers.map((n) =>
+          `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`
+        ).join('\n');
+      }
+
+      case 'kimigraph_callees': {
+        const limit = clampLimit(args.limit as number | undefined, 20);
+        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
+        const node = results[0].node;
+        const callees = kg.getCallees(node.id, limit);
+        if (callees.length === 0) return `\`${node.name}\` doesn't call any indexed symbols.`;
+        return `\`${node.name}\` calls:\n` + callees.map((n) =>
+          `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`
+        ).join('\n');
+      }
+
+      case 'kimigraph_impact': {
+        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
+        const node = results[0].node;
+        const affected = kg.getImpactRadius(node.id, (args.depth as number) ?? 2);
+        if (affected.length === 0) return `No dependents found for \`${node.name}\`.`;
+        return `Changing \`${node.name}\` may affect ${affected.length} symbol(s):\n` +
+          affected.map((n) => `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`).join('\n');
+      }
+
+      case 'kimigraph_node': {
+        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
+        const node = results[0].node;
+        const lines = [
+          `${mapKind(node.kind)} \`${node.name}\``,
+          `File: ${node.filePath}:${node.startLine}-${node.endLine}`,
+          node.qualifiedName ? `Qualified: ${node.qualifiedName}` : '',
+          node.signature ? `Signature: ${node.signature}` : '',
+          node.docstring ? `Docs: ${node.docstring}` : '',
+        ].filter(Boolean);
+        if (args.includeCode) {
+          const src = kg.getNodeSource(node);
+          if (src) lines.push('', '```', src, '```');
+        }
+        return lines.join('\n');
+      }
+
+      case 'kimigraph_status': {
+        const stats = kg.getStats();
+        const langLine = Object.entries(stats.filesByLanguage)
+          .sort((a, b) => b[1] - a[1])
+          .map(([k, v]) => `${k}=${v}`)
+          .join(', ');
+        const dbMb = (stats.dbSizeBytes / 1024 / 1024).toFixed(2);
+        return [
+          `KimiGraph Status`,
+          `  Project: ${kg.getProjectRoot()}`,
+          `  Files indexed: ${stats.files}`,
+          `  Symbols: ${stats.nodes}`,
+          `  Relationships: ${stats.edges}`,
+          `  By kind: ${Object.entries(stats.nodesByKind).map(([k, v]) => `${k}=${v}`).join(', ')}`,
+          langLine ? `  By language: ${langLine}` : '',
+          `  DB size: ${dbMb} MB`,
+        ].filter(Boolean).join('\n');
+      }
+
+      default:
+        return `Unknown tool: ${toolName}`;
+    }
+  }
+}

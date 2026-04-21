@@ -1,0 +1,50 @@
+{
+  "name": "rwn-kimigraph",
+  "version": "0.1.0",
+  "description": "Local-first semantic code knowledge graph for Kimi Code CLI",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "kimigraph": "./dist/bin/kimigraph.js",
+    "kg": "./dist/bin/kimigraph.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "dev": "tsx scripts/build.ts --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest --run",
+    "test:watch": "vitest",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  },
+  "keywords": [
+    "kimi",
+    "code-intelligence",
+    "knowledge-graph",
+    "mcp",
+    "static-analysis"
+  ],
+  "author": "rwn34",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "node-sqlite3-wasm": "^0.8.30",
+    "picomatch": "^4.0.2",
+    "tree-sitter-wasms": "^0.1.11",
+    "web-tree-sitter": "^0.25.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/picomatch": "^4.0.2",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  }
+}

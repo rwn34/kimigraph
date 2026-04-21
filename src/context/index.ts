@@ -1,0 +1,160 @@
+/**
+ * Context builder for KimiGraph.
+ * Builds comprehensive code context for a given task/query.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import {
+  Node,
+  TaskContext,
+  BuildContextOptions,
+} from '../types';
+import { QueryBuilder } from '../db/queries';
+import { GraphTraverser } from '../graph';
+import { extractSymbolTokens } from '../utils';
+
+export class ContextBuilder {
+  private queries: QueryBuilder;
+  private traverser: GraphTraverser;
+  private projectRoot: string;
+
+  constructor(projectRoot: string, queries: QueryBuilder, traverser: GraphTraverser) {
+    this.projectRoot = projectRoot;
+    this.queries = queries;
+    this.traverser = traverser;
+  }
+
+  async buildContext(
+    task: string,
+    options: BuildContextOptions = {}
+  ): Promise<TaskContext> {
+    const { maxNodes = 20, includeCode = true } = options;
+
+    // Step 1: Extract symbol tokens from task
+    const tokens = extractSymbolTokens(task);
+
+    // Step 2: Find entry points via search
+    const entryPoints = this.findEntryPoints(tokens, task);
+
+    // Step 3: Expand via graph traversal
+    const relatedNodes = this.expandGraph(entryPoints, maxNodes);
+
+    // Step 4: Collect unique nodes
+    const allNodes = new Map<string, Node>();
+    for (const ep of entryPoints) allNodes.set(ep.id, ep);
+    for (const rn of relatedNodes) allNodes.set(rn.id, rn);
+
+    // Step 5: Read source code
+    const codeSnippets = new Map<string, string>();
+    if (includeCode) {
+      for (const node of allNodes.values()) {
+        const code = this.getNodeSource(node);
+        if (code) codeSnippets.set(node.id, code);
+      }
+    }
+
+    return {
+      summary: this.buildSummary(task, entryPoints, relatedNodes),
+      entryPoints,
+      relatedNodes: [...relatedNodes],
+      codeSnippets,
+    };
+  }
+
+  private findEntryPoints(tokens: string[], task: string): Node[] {
+    const results: Node[] = [];
+    const seen = new Set<string>();
+
+    // Try exact name matches first
+    for (const token of tokens) {
+      const exact = this.queries.findNodesByExactName(token, { limit: 5 });
+      for (const node of exact) {
+        if (!seen.has(node.id)) {
+          seen.add(node.id);
+          results.push(node);
+        }
+      }
+    }
+
+    // Fallback to FTS
+    if (results.length === 0) {
+      const fts = this.queries.searchNodesFTS(task, { limit: 10 });
+      for (const node of fts) {
+        if (!seen.has(node.id)) {
+          seen.add(node.id);
+          results.push(node);
+        }
+      }
+    }
+
+    // Fallback to LIKE
+    if (results.length === 0 && tokens.length > 0) {
+      const like = this.queries.searchNodesLike(tokens[0], { limit: 10 });
+      for (const node of like) {
+        if (!seen.has(node.id)) {
+          seen.add(node.id);
+          results.push(node);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  private expandGraph(entryPoints: Node[], maxNodes: number): Node[] {
+    const result: Node[] = [];
+    const seen = new Set<string>(entryPoints.map((n) => n.id));
+
+    for (const ep of entryPoints) {
+      if (result.length >= maxNodes) break;
+
+      const subgraph = this.traverser.traverseBFS(ep.id, {
+        maxDepth: 2,
+        maxNodes: maxNodes - result.length,
+        direction: 'both',
+        edgeKinds: ['calls', 'imports', 'references', 'extends', 'implements', 'contains'],
+      });
+
+      for (const node of subgraph.nodes) {
+        if (!seen.has(node.id) && node.id !== ep.id) {
+          seen.add(node.id);
+          result.push(node);
+          if (result.length >= maxNodes) break;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private getNodeSource(node: Node): string | null {
+    if (node.kind === 'file') return null;
+
+    const absPath = path.join(this.projectRoot, node.filePath);
+    try {
+      const content = fs.readFileSync(absPath, 'utf8');
+      const lines = content.split('\n');
+      return lines.slice(node.startLine - 1, node.endLine).join('\n');
+    } catch {
+      return null;
+    }
+  }
+
+  private buildSummary(task: string, entryPoints: Node[], relatedNodes: Node[]): string {
+    const parts: string[] = [];
+    parts.push(`## Task: ${task}`);
+    parts.push('');
+    parts.push(`Found ${entryPoints.length} entry point(s) and ${relatedNodes.length} related symbol(s).`);
+
+    if (entryPoints.length > 0) {
+      parts.push('');
+      parts.push('### Entry Points');
+      for (const ep of entryPoints) {
+        parts.push(`- **${ep.name}** (${ep.kind}) — \`${ep.filePath}:${ep.startLine}\``);
+      }
+    }
+
+    return parts.join('\n');
+  }
+}
