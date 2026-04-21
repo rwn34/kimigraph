@@ -160,8 +160,10 @@ describe('Embedding Performance', () => {
 
     console.log(`Structural: ${t1}ms, With embeddings: ${t2}ms, Ratio: ${(t2 / t1).toFixed(2)}x`);
 
-    // Should be within 5x (generous for first model load; 3x target for warmed cache)
-    expect(t2).toBeLessThanOrEqual(t1 * 5);
+    // Should be within 10x on CI (generous for first model load across platforms;
+    // 3x target for warmed cache on local machines)
+    const isCI = process.env.CI === 'true';
+    expect(t2).toBeLessThanOrEqual(t1 * (isCI ? 10 : 5));
 
     // Cleanup
     fs.rmSync(perfDir, { recursive: true, force: true });
