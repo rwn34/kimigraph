@@ -32,11 +32,17 @@ describe('GraphWatcher', () => {
     );
     watcher.start();
 
+    // Give watcher time to initialize (fs.watch setup is async on some platforms)
+    await new Promise((r) => setTimeout(r, 100));
+
     // Modify the file
     fs.writeFileSync(sourceFile, `export function foo() { return 2; }\n`, 'utf8');
 
-    // Wait for debounce
-    await new Promise((r) => setTimeout(r, 300));
+    // Poll until sync fires or timeout (fs.watch can be slow in CI)
+    const deadline = Date.now() + 5000;
+    while (syncCount === 0 && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
 
     expect(syncCount).toBeGreaterThanOrEqual(1);
     watcher.stop();
