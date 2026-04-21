@@ -79,6 +79,20 @@ Restart Kimi CLI. Kimi will automatically use `kimigraph_explore` as its primary
 
 ---
 
+## Installation Requirements
+
+KimiGraph installs via npm. Native dependencies (`better-sqlite3`, `sqlite-vec`) ship prebuilt binaries for common platforms — no compiler toolchain needed in most cases.
+
+| Platform | Requirements | Notes |
+|----------|-------------|-------|
+| **Linux** (Debian, Ubuntu, etc.) | Node ≥18, `glibc` | Prebuilt binaries available for x64 and arm64. If your architecture lacks a prebuild, install `build-essential python3` for node-gyp fallback. |
+| **Windows** | Node ≥18 | Prebuilt binaries available for x64. Works on Windows 10/11 and Server 2019+. |
+| **macOS** | Node ≥18 | Prebuilt binaries available for Intel and Apple Silicon. |
+
+**CI verified:** All 9 combinations (Ubuntu / Windows / macOS × Node 18 / 20 / 22) pass tests on every push.
+
+---
+
 ## How It Works
 
 ```
@@ -284,15 +298,15 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 
 ### Edge cases and gaps ❌
 
-| Limitation | Why |
-|------------|-----|
-| Dynamic imports | `import(variable)` resolved at runtime, not statically |
-| Network calls | gRPC, HTTP endpoints not traced across service boundaries |
-| Macros / code generation | Preprocessor macros, templates, and codegen not expanded |
-| Reflection | Reflection-based calls (e.g., `Class.forName`) not resolved |
-| Cross-language FFI | WASM imports, Node-API, and FFI boundaries mostly not traced |
-| Comments outside symbols | Docstrings attached to symbols only; free-floating comments not indexed |
-| Anonymous functions | Callbacks and lambdas may not get meaningful names |
+| Limitation | Why | Fixable? |
+|------------|-----|----------|
+| **Dynamic imports** | `import(variable)` resolved at runtime, not statically | ❌ Out of scope — requires symbolic execution or runtime tracing |
+| **Network calls** | gRPC, HTTP endpoints not traced across service boundaries | ❌ Out of scope — endpoint URLs are often dynamic; cross-service tracing needs OpenAPI / protobuf parsing |
+| **Macros / code generation** | Preprocessor macros, templates, and codegen not expanded | ❌ Out of scope — C macros need a preprocessor; templates need compile-time instantiation |
+| **Reflection** | Reflection-based calls (e.g., `Class.forName`) not resolved | ❌ Out of scope — string values can't be traced statically through arbitrary program flow |
+| **Cross-language FFI** | WASM imports, Node-API, and FFI boundaries mostly not traced | 🟡 Partially fixable — JS-side WASM / `.node` imports are detectable statically; mapping to C++ functions is hard |
+| **Comments outside symbols** | Docstrings attached to symbols only; free-floating comments not indexed | ✅ Fixable now — tree-sitter can extract all comments; just needs indexing logic |
+| **Anonymous functions** | Callbacks and lambdas may not get meaningful names | ✅ Fixable now — tree-sitter detects lambdas / arrow functions; synthetic names (`callback_at_line_42`) are straightforward |
 
 ### Performance notes
 
@@ -330,6 +344,9 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 - [x] C / C++ / C# languages (9 total)
 
 **Phase 5 — Deepen (v0.4) 🎯**
+- [ ] Index all comments (not just docstrings) for richer semantic search
+- [ ] Extract anonymous functions with synthetic names (`callback_at_line_42`)
+- [ ] Detect JS-side WASM / Node-API imports statically
 - [ ] Type-aware search (find by signature: `"User -> string"`)
 - [ ] Cross-language resolution (WASM imports, protobuf boundaries)
 - [ ] Incremental embedding updates (only re-embed changed symbols)
