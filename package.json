@@ -1,6 +1,6 @@
 {
   "name": "rwn-kimigraph",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first semantic code knowledge graph for Kimi Code CLI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -39,7 +39,6 @@
     "@huggingface/transformers": "^4.1.0",
     "better-sqlite3": "^12.9.0",
     "commander": "^12.1.0",
-
     "picomatch": "^4.0.2",
     "sqlite-vec": "^0.1.9",
     "tree-sitter-wasms": "^0.1.11",
