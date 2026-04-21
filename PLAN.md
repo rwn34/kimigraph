@@ -48,25 +48,25 @@ This is smarter than CodeGraph's passive `cg.watch()` because it syncs at the RI
 
 | Feature | CodeGraph | KimiGraph (us) | Gap |
 |---------|-----------|----------------|-----|
-| **Languages** | 14 | 3 (TS/JS/PY) | **-11** |
-| **`explore` tool** | `codegraph_explore` — returns full source sections | No equivalent | **Missing the #1 tool** |
-| **File watcher** | `cg.watch()` passive watcher | Manual `sync()` only | **Agent must remember to sync** |
-| **Agent instructions** | Auto-injected `CLAUDE.md` | Nothing | **Agent doesn't know to use the graph** |
-| **MCP tools** | 8 (incl. `files`, `status`, `explore`) | 7 (no `explore`) | **Missing the key tool** |
-| **Benchmarks** | 92% fewer calls, 71% faster | None | **No proof** |
-| **Embeddings** | No | No | Same |
+| **Languages** | 14 | 9 (TS/JS/PY/Go/Rust/Java/C/C++/C#) | **-5** |
+| **`explore` tool** | `codegraph_explore` — returns full source sections | `kimigraph_explore` — full source sections | **✅ Shipped** |
+| **File watcher** | `cg.watch()` passive watcher | `fs.watch` auto-sync + pre-query sync | **✅ Shipped** |
+| **Agent instructions** | Auto-injected `CLAUDE.md` | `.kimi/AGENTS.md` + `.kimi/instructions.md` | **✅ Shipped** |
+| **MCP tools** | 8 (incl. `files`, `status`, `explore`) | 8 (incl. `explore`) | **✅ Shipped** |
+| **Benchmarks** | 92% fewer calls, 71% faster | 77% reduction, 4 repos | **✅ Proven** |
+| **Embeddings** | No | nomic-embed-text-v1.5 + sqlite-vec | **✅ Shipped** |
 
 ### vs. KiroGraph
 
 | Feature | KiroGraph | KimiGraph (us) | Gap |
 |---------|-----------|----------------|-----|
-| **Embeddings** | 768-dim nomic-embed-text-v1.5 | None | **Phase 3 only** |
-| **Semantic search** | 7 engines | None | **Phase 3 only** |
-| **Auto-sync hooks** | "Save → dirty → agent stop → sync" | Nothing | **Phase 2** |
+| **Embeddings** | 768-dim nomic-embed-text-v1.5 | nomic-embed-text-v1.5 + sqlite-vec | **✅ Shipped** |
+| **Semantic search** | 7 engines | sqlite-vec KNN | **✅ Shipped** |
+| **Auto-sync hooks** | "Save → dirty → agent stop → sync" | `fs.watch` debounce + pre-query sync | **✅ Shipped** |
 | **Node kinds** | 24 | 9 | **Won't chase. 12–15 is our target.** |
 | **Dashboard** | Yes | No | **Rejected** |
 
-**Verdict: We are ~35% of CodeGraph, ~15% of KiroGraph.** We have the foundation. We need the tools that replace file reads.
+**Verdict: We are ~65% of CodeGraph, ~85% of KiroGraph.** Core features shipped: structural graph, semantic search, auto-sync, 9 languages, 77% tool-call reduction proven.
 
 ---
 
@@ -87,7 +87,7 @@ Structural graph + MCP exposure. The agent CAN query the graph, but it still nee
 - [x] CI/CD
 - [x] npm package (dry-run clean)
 
-### Phase 2: Operational (v0.2.0) — 0% 🎯 CURRENT
+### Phase 2: Operational (v0.2.0) — 100% ✅ COMPLETE
 
 **Goal: The graph replaces file reads during exploration.**
 
@@ -130,7 +130,7 @@ Do NOT work on these. They are not on the path to replacing file reads.
 | Architecture analysis (packages, layers) | Unproven token-reduction value | Phase 4+ only |
 | 24 node kinds | Diminishing returns after 12–15 kinds | Never chase |
 | Multiple vector engines | One engine is enough | Never |
-| Cross-language resolution | Need 6+ languages first | After Phase 2 |
+| Cross-language resolution | Need 6+ languages first | Phase 4+ |
 
 ---
 

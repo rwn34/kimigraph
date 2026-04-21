@@ -38,9 +38,30 @@ describe('Multi-language indexing', () => {
       `public class App { public static void main(String[] args) { System.out.println("hi"); } }\n`,
       'utf8'
     );
+
+    // C
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'main.c'),
+      `#include <stdio.h>\nint main() { printf("hello\\n"); return 0; }\n`,
+      'utf8'
+    );
+
+    // C++
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'main.cpp'),
+      `#include <iostream>\nint main() { std::cout << "hello" << std::endl; return 0; }\n`,
+      'utf8'
+    );
+
+    // C#
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'Program.cs'),
+      `using System;\nclass Program { static void Main() { Console.WriteLine("hello"); } }\n`,
+      'utf8'
+    );
   });
 
-  it('indexes all 6 languages', async () => {
+  it('indexes all 9 languages', async () => {
     const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
@@ -51,9 +72,12 @@ describe('Multi-language indexing', () => {
     expect(langs).toContain('go');
     expect(langs).toContain('rust');
     expect(langs).toContain('java');
+    expect(langs).toContain('c');
+    expect(langs).toContain('cpp');
+    expect(langs).toContain('csharp');
 
-    expect(stats.files).toBe(4);
-    expect(stats.nodes).toBeGreaterThanOrEqual(4);
+    expect(stats.files).toBe(7);
+    expect(stats.nodes).toBeGreaterThanOrEqual(7);
 
     kg.close();
   });

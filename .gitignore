@@ -29,6 +29,9 @@ Thumbs.db
 *.log
 npm-debug.log*
 
+# Playwright test artifacts
+.playwright-mcp/
+
 # Environment
 .env
 .env.local

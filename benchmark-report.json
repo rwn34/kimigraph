@@ -26,7 +26,7 @@
       "avgFilesCovered": 4.666666666666667,
       "fileReductionPercent": 53,
       "toolCallReductionPercent": 82,
-      "durationMs": 3347
+      "durationMs": 3194
     },
     {
       "project": "go-cli",
@@ -54,7 +54,7 @@
       "avgFilesCovered": 2,
       "fileReductionPercent": 67,
       "toolCallReductionPercent": 67,
-      "durationMs": 2140
+      "durationMs": 1869
     },
     {
       "project": "rust-lib",
@@ -82,11 +82,11 @@
       "avgFilesCovered": 2.3333333333333335,
       "fileReductionPercent": 61,
       "toolCallReductionPercent": 70,
-      "durationMs": 2823
+      "durationMs": 2584
     },
     {
       "project": "rwn-kimigraph",
-      "totalFiles": 79,
+      "totalFiles": 82,
       "questions": [
         {
           "query": "How does the main flow work?",
@@ -108,12 +108,12 @@
         }
       ],
       "avgFilesCovered": 9.333333333333334,
-      "fileReductionPercent": 88,
+      "fileReductionPercent": 89,
       "toolCallReductionPercent": 90,
-      "durationMs": 30972
+      "durationMs": 28825
     }
   ],
-  "overallAvgFileReduction": 67,
+  "overallAvgFileReduction": 68,
   "overallAvgToolCallReduction": 77,
   "passed": true
 }

@@ -79,7 +79,7 @@ async function benchmarkProject(projectPath: string): Promise<BenchmarkResult> {
           if (!ignoreDirs.has(entry.name)) walk(full);
         } else if (entry.isFile()) {
           const ext = path.extname(entry.name).toLowerCase();
-          if (['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java'].includes(ext)) {
+          if (['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.cs'].includes(ext)) {
             files.push(full);
           }
         }

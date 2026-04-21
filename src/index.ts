@@ -542,6 +542,9 @@ export class KimiGraph {
       go: ['.go'],
       rust: ['.rs'],
       java: ['.java'],
+      c: ['.c', '.h'],
+      cpp: ['.cpp', '.cc', '.cxx', '.hpp', '.hxx'],
+      csharp: ['.cs'],
     })) {
       if ((exts as string[]).includes(ext)) {
         return lang as Language;

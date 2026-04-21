@@ -12,6 +12,8 @@ import * as path from 'path';
 const WATCH_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.py',
   '.go', '.rs', '.java',
+  '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx',
+  '.cs',
 ]);
 
 export interface WatcherOptions {

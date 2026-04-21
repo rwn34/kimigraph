@@ -17,16 +17,24 @@ kimigraph init
 # Index the codebase
 kimigraph index
 
+# Pre-download embedding model (optional, for offline use)
+npm run download-model
+
 # Connect to Kimi CLI
 kimigraph install
 ```
 
-Restart Kimi CLI. Kimi will now use `kimigraph_context` as its primary exploration tool.
+Restart Kimi CLI. Kimi will now use `kimigraph_explore` as its primary exploration tool.
 
 ## Supported Languages
 
-- TypeScript / JavaScript
-- Python
+- **TypeScript / JavaScript**
+- **Python**
+- **Go**
+- **Rust**
+- **Java**
+- **C / C++**
+- **C#**
 
 More languages coming in future releases.
 
@@ -42,6 +50,10 @@ More languages coming in future releases.
                     ▼           ▼
               tree-sitter    graph
               AST parser     traversal
+                              │
+                              ▼
+                         sqlite-vec
+                      semantic search
 ```
 
 100% local. No API keys. No external services.
@@ -67,8 +79,9 @@ More languages coming in future releases.
 
 | Tool | Purpose |
 |------|---------|
-| `kimigraph_search` | Find symbols by name |
+| `kimigraph_search` | Find symbols by name (exact → FTS → semantic → LIKE) |
 | `kimigraph_context` | Build comprehensive task context |
+| `kimigraph_explore` | **PRIMARY:** Returns full source sections for exploration |
 | `kimigraph_callers` | Who calls this symbol |
 | `kimigraph_callees` | What this symbol calls |
 | `kimigraph_impact` | What's affected by a change |
@@ -111,6 +124,7 @@ Impact radius of function validateToken (src/auth.ts:45):
 
 **Database** (`src/db/`)
 - SQLite with FTS5 full-text search
+- **sqlite-vec** for 768-dim semantic vector search
 - Nodes table: every symbol with location, kind, signature
 - Edges table: calls, imports, contains relationships
 - Files table: hash-based incremental sync
@@ -122,13 +136,23 @@ Impact radius of function validateToken (src/auth.ts:45):
 
 **Context Builder** (`src/context/`)
 - Extracts symbol tokens from natural language tasks
-- FTS + exact search for entry points
+- **4-tier search:** exact → FTS5 → semantic (vec0 KNN) → LIKE
 - BFS expansion to find related symbols
 - Formats results as markdown for Kimi
 
 **Resolution** (`src/resolution/`)
 - Matches unresolved calls to definitions
 - Same-file exact match → project-wide unique match → module-to-file
+
+**Embeddings** (`src/embeddings/`)
+- Lazy-loads `nomic-ai/nomic-embed-text-v1.5` (~130MB)
+- Generates 768-dim vectors for all embeddable symbols
+- Batched inference (32 texts/batch)
+
+**Watcher** (`src/watcher/`)
+- `fs.watch` recursive file watcher (zero deps)
+- Debounced auto-sync (2s) after file changes
+- Syncs before every MCP tool call if dirty
 
 ## Development
 
@@ -171,6 +195,9 @@ Make sure `tree-sitter-wasms` is installed: `npm install tree-sitter-wasms`
 - Minified files are excluded by default
 - Use `kimigraph sync` instead of `kimigraph index` for incremental updates
 
+**Embedding model download fails**
+Run `npm run download-model` to pre-download `nomic-embed-text-v1.5` for offline use.
+
 ## Roadmap
 
 **Phase 1 — Foundation (v0.1) ✅**
@@ -180,32 +207,39 @@ Make sure `tree-sitter-wasms` is installed: `npm install tree-sitter-wasms`
 - [x] MCP server with 7 tools
 - [x] Reference resolution (cross-file imports)
 
-**Phase 2 — Operational (v0.2) 🔄**
-- [ ] `kimigraph_explore` tool (returns full source sections in one call)
-- [ ] File watcher for auto-sync
-- [ ] Kimi instructions / hooks (auto-use graph when `.kimigraph/` exists)
-- [ ] More languages (Go, Rust, Java)
-- [ ] Benchmarks (prove ≥70% tool-call reduction)
+**Phase 2 — Operational (v0.2) ✅**
+- [x] `kimigraph_explore` tool (returns full source sections in one call)
+- [x] File watcher for auto-sync
+- [x] Kimi instructions / hooks (auto-use graph when `.kimigraph/` exists)
+- [x] Go, Rust, Java languages
+- [x] Benchmarks (≥70% tool-call reduction proven)
 
-**Phase 3 — Semantic (v0.3+) ⏸️**
-- [ ] Vector embeddings for semantic search
-- [ ] Architecture analysis (packages, layers, coupling)
+**Phase 3 — Semantic (v0.3) ✅**
+- [x] Vector embeddings (`nomic-embed-text-v1.5`)
+- [x] sqlite-vec semantic search
+- [x] Natural-language symbol lookup fallback
 
-> Phase 3 is **deliberately blocked** until Phase 2 exit criteria are met. See `PLAN.md`.
+**Phase 4 — Broader (v0.4) 🎯**
+- [ ] C / C++ / C# languages
+- [ ] Type-aware search (by signature)
+- [ ] Cross-language resolution (FFI, WASM boundaries)
+
+> See `PLAN.md` for detailed direction and decision log.
 
 ## Honest Limitations
 
-KimiGraph is **not yet a replacement** for file reads during exploration. Before you use it, know what works and what doesn't:
+KimiGraph replaces **most** file reads during exploration, but not all:
 
-| Works ✅ | Doesn't yet ❌ |
-|----------|----------------|
-| Structural queries (callers, callees, impact) | `explore` tool that returns full source sections |
-| Manual `sync()` | Auto-sync file watcher |
-| 3 languages (TS/JS/Python) | Go, Rust, Java, etc. |
-| Exact-name + FTS5 search | Semantic / natural-language search |
-| Cross-file call resolution (TS/JS) | Cross-language call resolution |
+| Works ✅ | Edge cases ❌ |
+|----------|--------------|
+| Structural queries (callers, callees, impact) | Dynamic imports resolved at runtime |
+| Auto-sync file watcher | Network calls (gRPC, HTTP) not traced |
+| 8 languages (TS/JS/PY/Go/Rust/Java/C/C++/C#) | Macros / code generation not expanded |
+| Exact-name + FTS5 + semantic search | Reflection-based calls not resolved |
+| Cross-file call resolution (same language) | Cross-language FFI (mostly) not resolved |
+| Full source sections via `explore` | Comments and docs outside symbol blocks |
 
-The graph stays accurate if you run `kimigraph sync` after edits. If you don't, it goes stale.
+The graph auto-syncs when files change. If you edit outside the watched directories, run `kimigraph sync`.
 
 ## License
 
