@@ -76,7 +76,7 @@ describe('Agent Instructions', () => {
   });
 
   it('writes AGENTS.md on init', async () => {
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
 
     const agentsPath = path.join(FIXTURE_DIR, '.kimi', 'AGENTS.md');
     expect(fs.existsSync(agentsPath)).toBe(true);

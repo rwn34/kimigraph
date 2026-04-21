@@ -41,7 +41,7 @@ describe('Multi-language indexing', () => {
   });
 
   it('indexes all 6 languages', async () => {
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     const stats = kg.getStats();

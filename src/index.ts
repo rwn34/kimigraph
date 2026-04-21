@@ -32,7 +32,13 @@ import { ContextBuilder } from './context';
 import { ReferenceResolver } from './resolution';
 import { GraphWatcher } from './watcher';
 import { sha256, readFileSafe, isExcludedPath, Mutex } from './utils';
+import { getEmbedder, resetEmbedder } from './embeddings';
 import * as fs from 'fs';
+
+const EMBEDDABLE_KINDS = new Set([
+  'function', 'method', 'class', 'interface', 'type_alias',
+  'variable', 'constant', 'property', 'enum', 'enum_member',
+]);
 
 export { initGrammars } from './extraction/grammar';
 export {
@@ -69,7 +75,7 @@ export class KimiGraph {
     this.config = config;
     this.projectRoot = projectRoot;
     this.traverser = new GraphTraverser(queries);
-    this.contextBuilder = new ContextBuilder(projectRoot, queries, this.traverser);
+    this.contextBuilder = new ContextBuilder(projectRoot, queries, this.traverser, db, config);
   }
 
   // --------------------------------------------------------------------------
@@ -124,6 +130,7 @@ export class KimiGraph {
   close(): void {
     this.unwatch();
     this.db.close();
+    resetEmbedder();
   }
 
   // --------------------------------------------------------------------------
@@ -278,6 +285,13 @@ export class KimiGraph {
       this.resolveReferences();
       onProgress?.({ phase: 'resolving', current: 1, total: 1 });
 
+      // Generate embeddings
+      if (this.config.embedSymbols && this.db.hasVecExtension()) {
+        onProgress?.({ phase: 'embedding', current: 0, total: 1 });
+        await this.embedAllNodes();
+        onProgress?.({ phase: 'embedding', current: 1, total: 1 });
+      }
+
       return {
         success: filesErrored === 0 || filesIndexed > 0,
         filesIndexed,
@@ -369,6 +383,11 @@ export class KimiGraph {
 
       this.resolveReferences();
 
+      // Generate embeddings for new/modified nodes
+      if (this.config.embedSymbols && this.db.hasVecExtension()) {
+        await this.embedMissingNodes();
+      }
+
       return {
         filesChecked: currentFiles.size,
         filesAdded,
@@ -386,7 +405,7 @@ export class KimiGraph {
   // Queries
   // --------------------------------------------------------------------------
 
-  searchNodes(query: string, opts?: SearchOptions): SearchResult[] {
+  async searchNodes(query: string, opts?: SearchOptions): Promise<SearchResult[]> {
     const limit = opts?.limit ?? 10;
 
     // Exact match
@@ -399,6 +418,23 @@ export class KimiGraph {
     const fts = this.queries.searchNodesFTS(query, { ...opts, limit });
     if (fts.length > 0) {
       return fts.map((node) => ({ node, score: 0.8 }));
+    }
+
+    // Semantic fallback
+    if (this.config.embedSymbols && this.db.hasVecExtension()) {
+      try {
+        const embedder = getEmbedder({ model: this.config.embeddingModel, batchSize: this.config.embeddingBatchSize });
+        const queryEmbedding = await embedder.embedOne(query);
+        const semantic = this.queries.searchNodesSemantic(queryEmbedding, { ...opts, limit });
+        if (semantic.length > 0) {
+          return semantic.map(({ node, distance }) => ({
+            node,
+            score: Math.max(0, 1 / (1 + distance) - 0.05),
+          }));
+        }
+      } catch {
+        // Semantic search failed, fall through to LIKE
+      }
     }
 
     // LIKE fallback
@@ -517,5 +553,54 @@ export class KimiGraph {
   private resolveReferences(): void {
     const resolver = new ReferenceResolver(this.queries, this.projectRoot);
     resolver.resolve();
+  }
+
+  // --------------------------------------------------------------------------
+  // EMBEDDINGS
+  // --------------------------------------------------------------------------
+
+  private async embedAllNodes(): Promise<void> {
+    const nodes = this.queries.getAllNodes().filter((n) => EMBEDDABLE_KINDS.has(n.kind));
+    await this.embedNodeBatch(nodes);
+  }
+
+  private async embedMissingNodes(): Promise<void> {
+    const nodes = this.queries.getAllNodes().filter((n) => {
+      if (!EMBEDDABLE_KINDS.has(n.kind)) return false;
+      const existing = this.db.get<{ c: number }>(
+        'SELECT COUNT(*) as c FROM node_embeddings WHERE node_id = ?',
+        [n.id]
+      );
+      return !existing || existing.c === 0;
+    });
+    if (nodes.length === 0) return;
+    await this.embedNodeBatch(nodes);
+  }
+
+  private async embedNodeBatch(nodes: Node[]): Promise<void> {
+    if (nodes.length === 0) return;
+
+    const embedder = getEmbedder({
+      model: this.config.embeddingModel,
+      batchSize: this.config.embeddingBatchSize,
+    });
+
+    const texts = nodes.map((n) => {
+      const parts: string[] = [n.qualifiedName ?? n.name];
+      if (n.docstring) parts.push(n.docstring);
+      if (n.signature) parts.push(n.signature);
+      return parts.join(' ').trim();
+    });
+
+    try {
+      const embeddings = await embedder.embed(texts);
+      this.db.transaction(() => {
+        for (let i = 0; i < nodes.length; i++) {
+          this.queries.upsertEmbedding(nodes[i].id, embeddings[i]);
+        }
+      });
+    } catch (err) {
+      console.warn('Embedding generation failed:', err instanceof Error ? err.message : String(err));
+    }
   }
 }

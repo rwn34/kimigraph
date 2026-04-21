@@ -13,6 +13,7 @@ coverage/
 
 # KimiGraph local data
 .kimigraph/
+.kimi/
 
 # OS files
 .DS_Store

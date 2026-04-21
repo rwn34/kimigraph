@@ -107,17 +107,15 @@ Structural graph + MCP exposure. The agent CAN query the graph, but it still nee
 - 6 languages indexed
 - Benchmark: ≥70% tool-call reduction vs. baseline on 3 repos
 
-### Phase 3: Semantic (v0.3.0+) — 0% ⏸️ BLOCKED
+### Phase 3: Semantic (v0.3.0+) — 100% ✅ COMPLETE
 
 **Goal: Natural language symbol search.**
 
-Blocked until Phase 2 exit criteria are met. See `VALIDATION.md` for unblock conditions.
-
-| # | Task | Reference | Effort |
-|---|------|-----------|--------|
-| 3.1 | **Single lightweight embedding model** | KiroGraph's nomic-embed-text-v1.5 (~130MB) | **High** |
-| 3.2 | **sqlite-vec integration** | One vector engine, not seven | **High** |
-| 3.3 | **Semantic `search` fallback** | "auth middleware" → `validateJwt` | **Medium** |
+| # | Task | Reference | Effort | Status |
+|---|------|-----------|--------|--------|
+| 3.1 | **Single lightweight embedding model** | KiroGraph's nomic-embed-text-v1.5 (~130MB) | **High** | ✅ `@huggingface/transformers` lazy load, 768-dim vectors |
+| 3.2 | **sqlite-vec integration** | One vector engine, not seven | **High** | ✅ `better-sqlite3` + `sqlite-vec` extension, `vec0` table |
+| 3.3 | **Semantic `search` fallback** | "auth middleware" → `validateJwt` | **Medium** | ✅ Semantic tier in `searchNodes` and `ContextBuilder` |
 
 ---
 

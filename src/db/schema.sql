@@ -1,5 +1,5 @@
 -- ============================================================
--- KIMIGRAPH SCHEMA v1
+-- KIMIGRAPH SCHEMA v2
 -- ============================================================
 
 -- Schema version tracking
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
-INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO meta (key, value) VALUES ('schema_version', '2');
 
 -- ============================================================
 -- NODES: Every significant code entity
@@ -113,3 +113,11 @@ CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target);
 CREATE INDEX IF NOT EXISTS idx_edges_kind ON edges(kind);
 CREATE INDEX IF NOT EXISTS idx_unresolved_source ON unresolved_refs(source_id);
 CREATE INDEX IF NOT EXISTS idx_unresolved_name ON unresolved_refs(ref_name);
+
+-- ============================================================
+-- VECTOR EMBEDDINGS (sqlite-vec vec0)
+-- ============================================================
+CREATE VIRTUAL TABLE IF NOT EXISTS node_embeddings USING vec0(
+  node_id TEXT PRIMARY KEY,
+  embedding float[768]
+);

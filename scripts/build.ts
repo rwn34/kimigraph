@@ -44,7 +44,7 @@ async function build(): Promise<void> {
     target: 'node18',
     format: 'cjs',
     sourcemap: true,
-    external: ['better-sqlite3', 'node-sqlite3-wasm', 'web-tree-sitter', 'tree-sitter-wasms'],
+    external: ['better-sqlite3', 'sqlite-vec', '@huggingface/transformers', 'web-tree-sitter', 'tree-sitter-wasms'],
     define: {
       'process.env.KIMIGRAPH_VERSION': `"${getVersion()}"`,
     },

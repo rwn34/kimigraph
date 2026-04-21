@@ -263,6 +263,9 @@ export interface KimiGraphConfig {
   maxFileSize: number;
   extractDocstrings: boolean;
   trackCallSites: boolean;
+  embedSymbols: boolean;
+  embeddingModel: string;
+  embeddingBatchSize: number;
 }
 
 export const DEFAULT_CONFIG: KimiGraphConfig = {
@@ -284,4 +287,7 @@ export const DEFAULT_CONFIG: KimiGraphConfig = {
   maxFileSize: 1024 * 1024, // 1MB
   extractDocstrings: true,
   trackCallSites: true,
+  embedSymbols: true,
+  embeddingModel: 'nomic-ai/nomic-embed-text-v1.5',
+  embeddingBatchSize: 32,
 };

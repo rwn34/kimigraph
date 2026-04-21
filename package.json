@@ -19,6 +19,7 @@
     "test": "vitest --run",
     "test:watch": "vitest",
     "benchmark": "tsx scripts/benchmark.ts",
+    "download-model": "tsx scripts/download-model.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "npm run clean && npm run build"
   },
@@ -35,9 +36,12 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.1.0",
+    "better-sqlite3": "^12.9.0",
     "commander": "^12.1.0",
-    "node-sqlite3-wasm": "^0.8.30",
+
     "picomatch": "^4.0.2",
+    "sqlite-vec": "^0.1.9",
     "tree-sitter-wasms": "^0.1.11",
     "web-tree-sitter": "^0.25.3"
   },

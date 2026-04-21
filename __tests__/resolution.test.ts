@@ -27,7 +27,7 @@ describe('Reference Resolution', () => {
 
   beforeEach(async () => {
     fs.rmSync(path.join(FIXTURE_DIR, '.kimigraph'), { recursive: true, force: true });
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
     kg.close();
   });
@@ -35,7 +35,7 @@ describe('Reference Resolution', () => {
   it('resolves same-file calls', async () => {
     const kg = await KimiGraph.open(FIXTURE_DIR);
 
-    const nodes = kg.searchNodes('main', { limit: 5 });
+    const nodes = await kg.searchNodes('main', { limit: 5 });
     const mainNode = nodes.find((n) => n.node.kind === 'function')?.node;
     expect(mainNode).toBeDefined();
 
@@ -51,7 +51,7 @@ describe('Reference Resolution', () => {
     const kg = await KimiGraph.open(FIXTURE_DIR);
 
     // sumThree calls add (from math.ts via import)
-    const sumThreeNode = kg.searchNodes('sumThree', { limit: 5 })[0]?.node;
+    const sumThreeNode = (await kg.searchNodes('sumThree', { limit: 5 }))[0]?.node;
     expect(sumThreeNode).toBeDefined();
 
     const callees = kg.getCallees(sumThreeNode.id, 10);
@@ -59,7 +59,7 @@ describe('Reference Resolution', () => {
     expect(calleeNames).toContain('add');
 
     // productThree calls multiply (from math.ts via import)
-    const productThreeNode = kg.searchNodes('productThree', { limit: 5 })[0]?.node;
+    const productThreeNode = (await kg.searchNodes('productThree', { limit: 5 }))[0]?.node;
     expect(productThreeNode).toBeDefined();
 
     const callees2 = kg.getCallees(productThreeNode.id, 10);
@@ -72,7 +72,7 @@ describe('Reference Resolution', () => {
   it('resolves callers across files', async () => {
     const kg = await KimiGraph.open(FIXTURE_DIR);
 
-    const addNodes = kg.searchNodes('add', { limit: 5, kinds: ['function'] });
+    const addNodes = await kg.searchNodes('add', { limit: 5, kinds: ['function'] });
     const addNode = addNodes[0]?.node;
     expect(addNode).toBeDefined();
 

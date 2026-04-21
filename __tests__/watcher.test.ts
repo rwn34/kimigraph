@@ -82,7 +82,7 @@ describe('KimiGraph watch integration', () => {
       'utf8'
     );
 
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     expect(() => kg.watch({ debounceMs: 50 })).not.toThrow();
@@ -98,7 +98,7 @@ describe('KimiGraph watch integration', () => {
       'utf8'
     );
 
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     kg.watch({ debounceMs: 50 });

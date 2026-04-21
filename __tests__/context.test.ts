@@ -18,7 +18,7 @@ describe('Context Builder', () => {
       'utf8'
     );
 
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     const ctx = await kg.buildContext('how does token validation work', { maxNodes: 10 });
@@ -37,7 +37,7 @@ describe('Context Builder', () => {
       'utf8'
     );
 
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     const ctx = await kg.buildContext('math operations', { maxNodes: 10 });

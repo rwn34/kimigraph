@@ -129,7 +129,7 @@ program
   .action(async (search: string, options: { kind?: string; limit: string }) => {
     try {
       const kg = await KimiGraph.open('.');
-      const results = kg.searchNodes(search, {
+      const results = await kg.searchNodes(search, {
         kinds: options.kind ? [options.kind as any] : undefined,
         limit: parseInt(options.limit, 10),
       });
@@ -153,7 +153,7 @@ program
   .action(async (symbol: string, options: { limit: string }) => {
     try {
       const kg = await KimiGraph.open('.');
-      const results = kg.searchNodes(symbol, { limit: 5 });
+      const results = await kg.searchNodes(symbol, { limit: 5 });
       if (results.length === 0) {
         console.log(`No symbol found matching "${symbol}"`);
         kg.close();
@@ -186,7 +186,7 @@ program
   .action(async (symbol: string, options: { limit: string }) => {
     try {
       const kg = await KimiGraph.open('.');
-      const results = kg.searchNodes(symbol, { limit: 5 });
+      const results = await kg.searchNodes(symbol, { limit: 5 });
       if (results.length === 0) {
         console.log(`No symbol found matching "${symbol}"`);
         kg.close();
@@ -220,7 +220,7 @@ program
   .action(async (symbol: string, options: { depth: string; limit: string }) => {
     try {
       const kg = await KimiGraph.open('.');
-      const results = kg.searchNodes(symbol, { limit: 5 });
+      const results = await kg.searchNodes(symbol, { limit: 5 });
       if (results.length === 0) {
         console.log(`No symbol found matching "${symbol}"`);
         kg.close();

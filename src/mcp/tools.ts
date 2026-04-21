@@ -191,7 +191,7 @@ export class ToolHandler {
     switch (toolName) {
       case 'kimigraph_search': {
         const limit = clampLimit(args.limit as number | undefined, 10);
-        const results = kg.searchNodes(args.query as string, { limit });
+        const results = await kg.searchNodes(args.query as string, { limit });
         if (results.length === 0) return `No symbols found matching "${args.query}".`;
         return results.map((r) =>
           `${mapKind(r.node.kind)} ${r.node.name}\n  File: ${r.node.filePath}:${r.node.startLine}`
@@ -226,7 +226,7 @@ export class ToolHandler {
 
       case 'kimigraph_callers': {
         const limit = clampLimit(args.limit as number | undefined, 20);
-        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        const results = await kg.searchNodes(args.symbol as string, { limit: 5 });
         if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
         const node = results[0].node;
         const callers = kg.getCallers(node.id, limit);
@@ -238,7 +238,7 @@ export class ToolHandler {
 
       case 'kimigraph_callees': {
         const limit = clampLimit(args.limit as number | undefined, 20);
-        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        const results = await kg.searchNodes(args.symbol as string, { limit: 5 });
         if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
         const node = results[0].node;
         const callees = kg.getCallees(node.id, limit);
@@ -249,7 +249,7 @@ export class ToolHandler {
       }
 
       case 'kimigraph_impact': {
-        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        const results = await kg.searchNodes(args.symbol as string, { limit: 5 });
         if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
         const node = results[0].node;
         const affected = kg.getImpactRadius(node.id, (args.depth as number) ?? 2);
@@ -259,7 +259,7 @@ export class ToolHandler {
       }
 
       case 'kimigraph_node': {
-        const results = kg.searchNodes(args.symbol as string, { limit: 5 });
+        const results = await kg.searchNodes(args.symbol as string, { limit: 5 });
         if (results.length === 0) return `Symbol "${args.symbol}" not found.`;
         const node = results[0].node;
         const lines = [

@@ -31,7 +31,7 @@ export function generateToken(): string {
       'utf8'
     );
 
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     const handler = new ToolHandler(kg);
@@ -66,7 +66,7 @@ export function generateToken(): string {
       'utf8'
     );
 
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     const handler = new ToolHandler(kg);
@@ -89,7 +89,7 @@ export function generateToken(): string {
       'utf8'
     );
 
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
     const handler = new ToolHandler(kg);

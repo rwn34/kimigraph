@@ -9,20 +9,33 @@ import {
   Node,
   TaskContext,
   BuildContextOptions,
+  KimiGraphConfig,
 } from '../types';
 import { QueryBuilder } from '../db/queries';
+import { DatabaseConnection } from '../db';
 import { GraphTraverser } from '../graph';
 import { extractSymbolTokens } from '../utils';
+import { getEmbedder } from '../embeddings';
 
 export class ContextBuilder {
   private queries: QueryBuilder;
   private traverser: GraphTraverser;
   private projectRoot: string;
+  private db: DatabaseConnection;
+  private config: KimiGraphConfig;
 
-  constructor(projectRoot: string, queries: QueryBuilder, traverser: GraphTraverser) {
+  constructor(
+    projectRoot: string,
+    queries: QueryBuilder,
+    traverser: GraphTraverser,
+    db: DatabaseConnection,
+    config: KimiGraphConfig
+  ) {
     this.projectRoot = projectRoot;
     this.queries = queries;
     this.traverser = traverser;
+    this.db = db;
+    this.config = config;
   }
 
   async buildContext(
@@ -35,7 +48,7 @@ export class ContextBuilder {
     const tokens = extractSymbolTokens(task);
 
     // Step 2: Find entry points via search
-    const entryPoints = this.findEntryPoints(tokens, task);
+    const entryPoints = await this.findEntryPoints(tokens, task);
 
     // Step 3: Expand via graph traversal
     const relatedNodes = this.expandGraph(entryPoints, maxNodes);
@@ -62,7 +75,7 @@ export class ContextBuilder {
     };
   }
 
-  private findEntryPoints(tokens: string[], task: string): Node[] {
+  private async findEntryPoints(tokens: string[], task: string): Promise<Node[]> {
     const results: Node[] = [];
     const seen = new Set<string>();
 
@@ -85,6 +98,26 @@ export class ContextBuilder {
           seen.add(node.id);
           results.push(node);
         }
+      }
+    }
+
+    // Fallback to semantic search
+    if (results.length === 0 && this.config.embedSymbols && this.db.hasVecExtension()) {
+      try {
+        const embedder = getEmbedder({
+          model: this.config.embeddingModel,
+          batchSize: this.config.embeddingBatchSize,
+        });
+        const queryEmbedding = await embedder.embedOne(task);
+        const semantic = this.queries.searchNodesSemantic(queryEmbedding, { limit: 10 });
+        for (const { node } of semantic) {
+          if (!seen.has(node.id)) {
+            seen.add(node.id);
+            results.push(node);
+          }
+        }
+      } catch {
+        // Semantic search failed, fall through
       }
     }
 

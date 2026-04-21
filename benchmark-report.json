@@ -26,7 +26,7 @@
       "avgFilesCovered": 4.666666666666667,
       "fileReductionPercent": 53,
       "toolCallReductionPercent": 82,
-      "durationMs": 1459
+      "durationMs": 3347
     },
     {
       "project": "go-cli",
@@ -54,7 +54,7 @@
       "avgFilesCovered": 2,
       "fileReductionPercent": 67,
       "toolCallReductionPercent": 67,
-      "durationMs": 277
+      "durationMs": 2140
     },
     {
       "project": "rust-lib",
@@ -82,11 +82,11 @@
       "avgFilesCovered": 2.3333333333333335,
       "fileReductionPercent": 61,
       "toolCallReductionPercent": 70,
-      "durationMs": 427
+      "durationMs": 2823
     },
     {
       "project": "rwn-kimigraph",
-      "totalFiles": 73,
+      "totalFiles": 79,
       "questions": [
         {
           "query": "How does the main flow work?",
@@ -97,23 +97,23 @@
         {
           "query": "Trace the data processing",
           "exploreCalls": 1,
-          "filesCovered": 7,
-          "sectionsReturned": 15
+          "filesCovered": 8,
+          "sectionsReturned": 16
         },
         {
           "query": "What is the architecture?",
           "exploreCalls": 1,
-          "filesCovered": 0,
-          "sectionsReturned": 0
+          "filesCovered": 9,
+          "sectionsReturned": 29
         }
       ],
-      "avgFilesCovered": 6,
-      "fileReductionPercent": 92,
-      "toolCallReductionPercent": 86,
-      "durationMs": 17540
+      "avgFilesCovered": 9.333333333333334,
+      "fileReductionPercent": 88,
+      "toolCallReductionPercent": 90,
+      "durationMs": 30972
     }
   ],
-  "overallAvgFileReduction": 68,
-  "overallAvgToolCallReduction": 76,
+  "overallAvgFileReduction": 67,
+  "overallAvgToolCallReduction": 77,
   "passed": true
 }

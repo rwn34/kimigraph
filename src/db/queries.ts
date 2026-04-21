@@ -52,7 +52,7 @@ export class QueryBuilder {
 
   deleteFile(filePath: string): void {
     // Cascade deletes nodes (and their edges via application-level cleanup)
-    this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
+    this.deleteNodesByFile(filePath);
     this.db.run('DELETE FROM files WHERE path = ?', [filePath]);
     this.db.run('DELETE FROM unresolved_refs WHERE file_path = ?', [filePath]);
   }
@@ -198,6 +198,11 @@ export class QueryBuilder {
       ...ids.map((r) => r.id),
       ...ids.map((r) => r.id),
     ]);
+    try {
+      this.db.run(`DELETE FROM node_embeddings WHERE node_id IN (${placeholders})`, ids.map((r) => r.id));
+    } catch {
+      // node_embeddings may not exist in old schemas
+    }
     this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
   }
 
@@ -523,11 +528,83 @@ export class QueryBuilder {
     return { files, nodes, edges, nodesByKind, filesByLanguage, dbSizeBytes: 0 };
   }
 
+  // ==========================================================================
+  // EMBEDDINGS
+  // ==========================================================================
+
+  upsertEmbedding(nodeId: string, embedding: Float32Array): void {
+    try {
+      this.db.run(
+        'INSERT OR REPLACE INTO node_embeddings (node_id, embedding) VALUES (?, ?)',
+        [nodeId, embedding]
+      );
+    } catch {
+      // vec0 table may not exist in old schemas
+    }
+  }
+
+  deleteEmbeddingsByNodeIds(nodeIds: string[]): void {
+    if (nodeIds.length === 0) return;
+    const placeholders = nodeIds.map(() => '?').join(',');
+    try {
+      this.db.run(
+        `DELETE FROM node_embeddings WHERE node_id IN (${placeholders})`,
+        nodeIds
+      );
+    } catch {
+      // vec0 table may not exist in old schemas
+    }
+  }
+
+  deleteEmbeddingsByFile(filePath: string): void {
+    const ids = this.db.all<{ id: string }>('SELECT id FROM nodes WHERE file_path = ?', [filePath]);
+    if (ids.length === 0) return;
+    this.deleteEmbeddingsByNodeIds(ids.map((r) => r.id));
+  }
+
+  searchNodesSemantic(queryEmbedding: Float32Array, opts: SearchOptions = {}): Array<{ node: Node; distance: number }> {
+    const { kinds, languages, limit = 20 } = opts;
+    const safeLimit = Math.max(1, Math.floor(Number(limit)));
+
+    const conditions: string[] = [];
+    const params: unknown[] = [queryEmbedding, safeLimit];
+
+    if (kinds && kinds.length > 0) {
+      conditions.push(`n.kind IN (${kinds.map(() => '?').join(',')})`);
+      params.push(...kinds);
+    }
+    if (languages && languages.length > 0) {
+      conditions.push(`n.language IN (${languages.map(() => '?').join(',')})`);
+      params.push(...languages);
+    }
+
+    const where = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
+
+    const sql = `SELECT n.*, e.distance
+      FROM node_embeddings e
+      JOIN nodes n ON n.id = e.node_id
+      WHERE e.embedding MATCH ? AND e.k = ?
+      ${where}
+      ORDER BY e.distance ASC`;
+
+    try {
+      const rows = this.db.all<RawNode & { distance: number }>(sql, params);
+      return rows.map((row) => ({ node: this.rowToNode(row), distance: row.distance }));
+    } catch {
+      return [];
+    }
+  }
+
   clear(): void {
     this.db.exec('DELETE FROM edges');
     this.db.exec('DELETE FROM nodes');
     this.db.exec('DELETE FROM files');
     this.db.exec('DELETE FROM unresolved_refs');
+    try {
+      this.db.exec('DELETE FROM node_embeddings');
+    } catch {
+      // vec0 table may not exist in old schemas
+    }
   }
 
   // ==========================================================================

@@ -1,5 +1,5 @@
 /**
- * Database connection wrapper for node-sqlite3-wasm.
+ * Database connection wrapper for better-sqlite3.
  */
 
 import * as fs from 'fs';
@@ -8,7 +8,9 @@ import { DatabaseError } from '../errors';
 import { resolveAsset } from '../utils';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { Database } = require('node-sqlite3-wasm');
+const Database = require('better-sqlite3');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const sqliteVec = require('sqlite-vec');
 
 export class DatabaseConnection {
   private db: any;
@@ -20,6 +22,15 @@ export class DatabaseConnection {
     fs.mkdirSync(dir, { recursive: true });
 
     this.db = new Database(dbPath);
+
+    // Load sqlite-vec extension
+    try {
+      this.db.loadExtension(sqliteVec.getLoadablePath());
+    } catch (err) {
+      // sqlite-vec extension failed to load — embeddings will be unavailable
+      // but structural graph continues to work
+      console.warn('sqlite-vec extension not loaded:', err instanceof Error ? err.message : String(err));
+    }
 
     // Performance pragmas
     this.db.exec(`
@@ -57,25 +68,26 @@ export class DatabaseConnection {
   }
 
   run(sql: string, params?: unknown[]): void {
-    this.db.run(sql, params ?? []);
+    this.db.prepare(sql).run(params ?? []);
   }
 
   get<T = Record<string, unknown>>(sql: string, params?: unknown[]): T | null {
-    return this.db.get(sql, params ?? []) as T | null;
+    const row = this.db.prepare(sql).get(params ?? []);
+    return row ?? null;
   }
 
   all<T = Record<string, unknown>>(sql: string, params?: unknown[]): T[] {
-    return this.db.all(sql, params ?? []) as T[];
+    return this.db.prepare(sql).all(params ?? []) as T[];
   }
 
   transaction<T>(fn: () => T): T {
-    this.db.exec('BEGIN');
+    this.db.prepare('BEGIN').run();
     try {
       const result = fn();
-      this.db.exec('COMMIT');
+      this.db.prepare('COMMIT').run();
       return result;
     } catch (err) {
-      this.db.exec('ROLLBACK');
+      this.db.prepare('ROLLBACK').run();
       throw err;
     }
   }
@@ -90,6 +102,16 @@ export class DatabaseConnection {
 
   close(): void {
     this.db.close();
+  }
+
+  /** Check if sqlite-vec is loaded and functional. */
+  hasVecExtension(): boolean {
+    try {
+      const result = this.get<{ v: string }>('SELECT vec_version() as v');
+      return !!result?.v;
+    } catch {
+      return false;
+    }
   }
 }
 

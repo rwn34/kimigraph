@@ -14,7 +14,7 @@ describe('Graph Traversal', () => {
       'utf8'
     );
     fs.rmSync(path.join(FIXTURE_DIR, '.kimigraph'), { recursive: true, force: true });
-    const kg = await KimiGraph.init(FIXTURE_DIR);
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
     kg.close();
   });
@@ -22,7 +22,7 @@ describe('Graph Traversal', () => {
   it('finds callees', async () => {
     const kg = await KimiGraph.open(FIXTURE_DIR);
 
-    const aNode = kg.searchNodes('a', { limit: 5 })[0]?.node;
+    const aNode = (await kg.searchNodes('a', { limit: 5 }))[0]?.node;
     expect(aNode).toBeDefined();
 
     const callees = kg.getCallees(aNode.id, 10);
@@ -35,7 +35,7 @@ describe('Graph Traversal', () => {
   it('finds callers', async () => {
     const kg = await KimiGraph.open(FIXTURE_DIR);
 
-    const bNode = kg.searchNodes('b', { limit: 5 })[0]?.node;
+    const bNode = (await kg.searchNodes('b', { limit: 5 }))[0]?.node;
     expect(bNode).toBeDefined();
 
     const callers = kg.getCallers(bNode.id, 10);
@@ -48,7 +48,7 @@ describe('Graph Traversal', () => {
   it('finds impact radius', async () => {
     const kg = await KimiGraph.open(FIXTURE_DIR);
 
-    const cNode = kg.searchNodes('c', { limit: 5 })[0]?.node;
+    const cNode = (await kg.searchNodes('c', { limit: 5 }))[0]?.node;
     expect(cNode).toBeDefined();
 
     // Debug: log impacted nodes
@@ -60,7 +60,7 @@ describe('Graph Traversal', () => {
     expect(impactedC.length).toBeGreaterThanOrEqual(2);
 
     // a is at the top — nobody calls it, so reverse impact is 0
-    const aNode = kg.searchNodes('a', { limit: 5 })[0]?.node;
+    const aNode = (await kg.searchNodes('a', { limit: 5 }))[0]?.node;
     const impactedA = kg.getImpactRadius(aNode.id, 3);
     expect(impactedA.length).toBe(0);
 
@@ -70,8 +70,8 @@ describe('Graph Traversal', () => {
   it('finds paths between nodes', async () => {
     const kg = await KimiGraph.open(FIXTURE_DIR);
 
-    const aNode = kg.searchNodes('a', { limit: 5 })[0]?.node;
-    const cNode = kg.searchNodes('c', { limit: 5 })[0]?.node;
+    const aNode = (await kg.searchNodes('a', { limit: 5 }))[0]?.node;
+    const cNode = (await kg.searchNodes('c', { limit: 5 }))[0]?.node;
     expect(aNode).toBeDefined();
     expect(cNode).toBeDefined();
 
