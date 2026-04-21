@@ -1,158 +1,154 @@
-# KimiGraph — Honest Plan & Scope Correction
+# KimiGraph — Plan & Direction
 
 > **Last updated:** 2026-04-21  
-> **Status:** Brutal reassessment after MVP drift
+> **Direction:** CodeGraph-simple foundation + KiroGraph's hook-based sync. Nothing else.
 
 ---
 
-## 1. What Was The Original Plan?
+## 1. Direction Decision
 
-Build a **local-first code knowledge graph for Kimi Code CLI**, inspired by:
+We are building a **local-first code knowledge graph for Kimi Code CLI**.
 
-- **CodeGraph** (colbymchenry / Claude Code) — pre-indexed graph, 14 languages, `codegraph_explore`, file watcher, 92% fewer tool calls
-- **KiroGraph** (Kiro IDE) — semantic graph, 24 node kinds, vector embeddings, 90%+ token reduction
+**Primary reference: CodeGraph** (colbymchenry / Claude Code).  
+**Secondary reference: KiroGraph** — we take ONLY its hook-based auto-sync pattern.  
+**We do NOT follow both.**
 
-**The goal:** Give Kimi a pre-built graph so it queries symbols/calls/impact in **one MCP tool call** instead of burning tokens on 20+ file reads and greps.
+### Why CodeGraph as the North Star
+
+| Factor | CodeGraph | KiroGraph | Our Pick |
+|--------|-----------|-----------|----------|
+| **Proven token reduction** | 92% fewer calls, 71% faster | 90%+ reduction | ✅ CodeGraph — simpler, proven |
+| **Complexity** | SQLite + tree-sitter only | 7 vector engines, 24 node kinds | ✅ CodeGraph — we can actually ship this |
+| **Embeddings required?** | No | Yes | ✅ CodeGraph — structural graph alone wins |
+| **Shipping status** | npm published, stable | Alpha, not on npm | ✅ CodeGraph — proven in production |
+| **Stack match** | SQLite, TS, tree-sitter | PGlite, Qdrant, Typesense | ✅ CodeGraph — matches our code |
+
+**The single insight from CodeGraph:** A pre-indexed structural graph (symbols, calls, imports) is enough to replace 90%+ of file reads during exploration. You do NOT need embeddings, semantic search, or architecture analysis to achieve that.
+
+### What We Take From KiroGraph (One Thing Only)
+
+**The hook-based sync pattern:** "File saved → mark dirty → sync when agent stops."  
+This is smarter than CodeGraph's passive `cg.watch()` because it syncs at the RIGHT time — when the agent is done working, not on every keystroke.
+
+### What We Reject From Both
+
+| Rejected | Source | Why |
+|----------|--------|-----|
+| 7 vector engines | KiroGraph | Over-engineered. One lightweight engine in Phase 3 is enough. |
+| 24 node kinds | KiroGraph | Too much extraction overhead. 12–15 kinds is the sweet spot. |
+| Web UI / dashboard | KiroGraph | Zero value for Kimi CLI integration. |
+| Architecture analysis | KiroGraph | Unproven token-reduction value. |
+| Cross-language resolution | CodeGraph | Out of scope until we have 6+ languages. |
 
 ---
 
-## 2. Brutal Honest Gap Analysis
+## 2. Honest Gap Analysis
 
-### What CodeGraph Does vs. What We Built
+### vs. CodeGraph
 
 | Feature | CodeGraph | KimiGraph (us) | Gap |
 |---------|-----------|----------------|-----|
-| **Languages** | 14 | 3 (TS/JS/PY) | **-11 languages** |
-| **MCP tools** | 8 (incl. `explore`, `files`, `status`) | 7 (no `explore`) | **Missing the key tool** |
-| **File watcher** | `cg.watch()` auto-sync | Manual `sync()` only | **Agent must remember to sync** |
-| **Agent instructions** | Auto-injected global `CLAUDE.md` | Nothing | **Agent doesn't know to use the graph** |
-| **Embeddings / semantic search** | No (structural only) | No | **Same (acceptable for now)** |
-| **Benchmarks** | 92% fewer calls, 71% faster | None | **No proof it works** |
-| **Call resolution** | Cross-file + cross-language | Cross-file, same-lang only | **Acceptable for MVP** |
-| **Type hierarchy** | Full | Stub (`getTypeHierarchy` unwired) | **Unused** |
+| **Languages** | 14 | 3 (TS/JS/PY) | **-11** |
+| **`explore` tool** | `codegraph_explore` — returns full source sections | No equivalent | **Missing the #1 tool** |
+| **File watcher** | `cg.watch()` passive watcher | Manual `sync()` only | **Agent must remember to sync** |
+| **Agent instructions** | Auto-injected `CLAUDE.md` | Nothing | **Agent doesn't know to use the graph** |
+| **MCP tools** | 8 (incl. `files`, `status`, `explore`) | 7 (no `explore`) | **Missing the key tool** |
+| **Benchmarks** | 92% fewer calls, 71% faster | None | **No proof** |
+| **Embeddings** | No | No | Same |
 
-### What KiroGraph Does vs. What We Built
+### vs. KiroGraph
 
 | Feature | KiroGraph | KimiGraph (us) | Gap |
 |---------|-----------|----------------|-----|
-| **Vector engines** | 7 (SQLite-vec, PGlite, Qdrant, Typesense, Orama, etc.) | 0 | **No semantic search at all** |
-| **Embeddings** | 768-dim nomic-embed-text-v1.5 | None | **Cannot do "auth middleware" → `validateJwt`** |
-| **Node kinds** | 24 | 9 | **Missing components, routes, decorators, etc.** |
-| **Auto-sync hooks** | "File saved → mark dirty → agent stops → sync" | Nothing | **Graph goes stale immediately** |
-| **Dashboard / Web UI** | Yes (Qdrant/Typesense UIs) | No | **Out of scope** |
+| **Embeddings** | 768-dim nomic-embed-text-v1.5 | None | **Phase 3 only** |
+| **Semantic search** | 7 engines | None | **Phase 3 only** |
+| **Auto-sync hooks** | "Save → dirty → agent stop → sync" | Nothing | **Phase 2** |
+| **Node kinds** | 24 | 9 | **Won't chase. 12–15 is our target.** |
+| **Dashboard** | Yes | No | **Rejected** |
 
-### The Honest Verdict
-
-**We are ~30% of the way to CodeGraph's functionality and ~15% of the way to KiroGraph's.**
-
-We built the **database layer and parsers** — the foundation. But the features that actually produce the 90%+ token reduction are:
-
-1. **`explore` / `context` tool that returns FULL source sections in ONE call** — so the agent never needs to `ReadFile` during discovery
-2. **File watcher + auto-sync** — so the graph is always current without the agent thinking about it
-3. **Agent instructions** — telling Kimi "use `kimigraph_context` first, don't grep"
-4. **Language coverage** — CodeGraph supports 14; we support 3
-
-We have **none** of #1–#3 fully working, and #1 is the most important.
+**Verdict: We are ~35% of CodeGraph, ~15% of KiroGraph.** We have the foundation. We need the tools that replace file reads.
 
 ---
 
-## 3. Why Did We Drift?
+## 3. Phases
 
-The README roadmap lists:
+### Phase 1: Foundation (v0.1.0) — ~97% ✅
 
-- Vector embeddings for semantic search
-- Architecture analysis (packages, layers, coupling)
-- File watcher for auto-sync
-- More languages (Go, Rust, Java)
-
-**The problem:** Embeddings and architecture analysis are KiroGraph territory — advanced, high-effort features that are NOT required to beat the "grep + read" baseline. We started planning Phase 3 (intelligence) before Phase 2 (operational) was done. This is scope creep.
-
-**What we should have done first:**
-1. Make `kimigraph_context` so good that Kimi never needs to read files during exploration
-2. Add a file watcher so the graph stays fresh automatically
-3. Write Kimi instructions so the agent knows to use the graph
-4. Add 3–4 more languages (Go, Rust, Java)
-5. **Only then** consider embeddings
-
----
-
-## 4. Corrected Scope — Locked Until Phase 2 Done
-
-### Out of Scope (Do Not Touch)
-
-| Item | Reason |
-|------|--------|
-| Vector embeddings / semantic search | KiroGraph feature; CodeGraph doesn't have it and still hits 92% reduction. Revisit after Phase 2. |
-| Architecture analysis (packages, layers, coupling) | Nice-to-have; no proven token-reduction value. Revisit after Phase 2. |
-| Web UI / dashboard | Completely unrelated to Kimi CLI integration. Delete from roadmap. |
-| IDE extensions | Out of scope for this project. |
-
-### In Scope — Phase 1: Foundation (CURRENT — ~97% done)
+Structural graph + MCP exposure. The agent CAN query the graph, but it still needs to know to do so.
 
 - [x] SQLite + FTS5 schema
 - [x] TS/JS/Python extraction
 - [x] Graph traversal (callers, callees, impact, paths, cycles, dead code)
-- [x] Reference resolution (same-file + cross-file imports)
+- [x] Reference resolution (cross-file imports)
 - [x] MCP server with 7 tools
 - [x] Context builder (`buildContext`)
 - [x] CLI (`init`, `index`, `sync`, `query`, `stats`, `mcp`)
-- [x] Tests (18/18 passing)
-- [x] CI/CD (GitHub Actions)
-- [ ] **PENDING:** Commit uncommitted changes + `npm publish`
+- [x] Tests (18/18)
+- [x] CI/CD
+- [x] npm package (dry-run clean)
 
-### In Scope — Phase 2: Operational (NEXT — 0% done)
+### Phase 2: Operational (v0.2.0) — 0% 🎯 CURRENT
 
-**Goal: The graph actually replaces file reads during exploration.**
+**Goal: The graph replaces file reads during exploration.**
 
-| # | Task | Why It Matters | Effort |
-|---|------|----------------|--------|
-| 2.1 | **`kimigraph_explore` MCP tool** | Returns full source sections for a natural-language query in ONE call. This is the tool that replaces 10–20 file reads. | **High** |
-| 2.2 | **File watcher (`chokidar` or `fs.watch`)** | Watches source files, marks dirty, auto-runs `sync()` on agent turn end or after N seconds of quiet. Graph never goes stale. | **Medium** |
-| 2.3 | **Kimi instructions / hooks** | Auto-inject instructions telling Kimi: "If `.kimigraph/` exists, use `kimigraph_context` and `kimigraph_explore` as PRIMARY tools. Do NOT grep or read files for exploration." | **Medium** |
-| 2.4 | **Language expansion: Go, Rust, Java** | CodeGraph supports 14; adding 3 more gets us to 6 total, covering ~80% of codebases. Each needs a `.scm` query file. | **Medium** (3 days) |
-| 2.5 | **Benchmarks** | Measure tool-call reduction vs. baseline on 3 real repos. Prove the value proposition. | **Low** |
+| # | Task | Reference | Effort |
+|---|------|-----------|--------|
+| 2.1 | **`kimigraph_explore` MCP tool** | CodeGraph's `codegraph_explore` | **High** |
+| 2.2 | **Hook-based auto-sync** | KiroGraph's sync pattern | **Medium** |
+| 2.3 | **Kimi instructions / auto-detect** | CodeGraph's `CLAUDE.md` injection | **Medium** |
+| 2.4 | **Languages: Go, Rust, Java** | CodeGraph's breadth | **Medium** |
+| 2.5 | **Benchmarks** | CodeGraph's benchmark suite | **Low** |
 
-**Phase 2 exit criteria:**
-- Agent can answer "How does auth work?" using only `kimigraph_explore` — zero file reads
-- File watcher keeps index fresh across edits
+**Phase 2 exit criteria (see VALIDATION.md for testable details):**
+- `kimigraph_explore` returns full source sections for a natural-language query in ONE call
+- Agent answers "How does X work?" with ZERO file reads
+- Hook auto-sync keeps graph fresh without agent intervention
 - Kimi auto-uses graph tools when `.kimigraph/` exists
-- 6 languages supported
-- Benchmark shows ≥70% tool-call reduction
+- 6 languages indexed
+- Benchmark: ≥70% tool-call reduction vs. baseline on 3 repos
 
-### In Scope — Phase 3: Semantic (FUTURE — blocked on Phase 2)
+### Phase 3: Semantic (v0.3.0+) — 0% ⏸️ BLOCKED
 
-| # | Task | Why It Matters | Effort |
-|---|------|----------------|--------|
-| 3.1 | **Vector embeddings** | Natural language search: "auth middleware" → `validateJwt`. KiroGraph's main differentiator. | **Very High** |
-| 3.2 | **sqlite-vec or `pglite` integration** | Lightweight vector storage without external services. | **High** |
-| 3.3 | **Architecture analysis** | Package-level coupling, layer detection, circular dependency reports. | **Medium-High** |
+**Goal: Natural language symbol search.**
 
----
+Blocked until Phase 2 exit criteria are met. See `VALIDATION.md` for unblock conditions.
 
-## 5. Immediate Actions (This Session)
-
-1. **Commit all changes** — `package.json`, `src/index.ts`, `.github/AGENTS.md`, `CONTRIBUTING.md`
-2. **Delete debug scripts** — `scripts/debug-graph-fixture.ts`, `scripts/benchmark.ts` (or move to `scripts/debug/`)
-3. **Publish to npm** — `npm publish`
-4. **Lock Phase 3 items** — remove "vector embeddings" and "architecture analysis" from README roadmap until Phase 2 is done
-5. **Update README** — add honest limitations section: "No file watcher yet. No semantic search yet. 3 languages."
-6. **Write this PLAN.md** — ✅ doing now
+| # | Task | Reference | Effort |
+|---|------|-----------|--------|
+| 3.1 | **Single lightweight embedding model** | KiroGraph's nomic-embed-text-v1.5 (~130MB) | **High** |
+| 3.2 | **sqlite-vec integration** | One vector engine, not seven | **High** |
+| 3.3 | **Semantic `search` fallback** | "auth middleware" → `validateJwt` | **Medium** |
 
 ---
 
-## 6. Decision Log
+## 4. Locked Out-of-Scope List
+
+Do NOT work on these. They are not on the path to replacing file reads.
+
+| Item | Why Rejected | When Revisit |
+|------|--------------|--------------|
+| Web UI / dashboard | Zero value for CLI agent integration | Never |
+| IDE extensions | Different product surface | Never |
+| Architecture analysis (packages, layers) | Unproven token-reduction value | Phase 4+ only |
+| 24 node kinds | Diminishing returns after 12–15 kinds | Never chase |
+| Multiple vector engines | One engine is enough | Never |
+| Cross-language resolution | Need 6+ languages first | After Phase 2 |
+
+---
+
+## 5. Decision Log
 
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-04-21 | Reject embeddings for now | CodeGraph proves structural graph alone achieves 92% reduction. Embeddings are Phase 3. |
-| 2026-04-21 | Reject web UI / dashboard | Zero value for Kimi CLI integration. |
-| 2026-04-21 | Reject architecture analysis | Unproven token-reduction value. Phase 3 at earliest. |
-| 2026-04-21 | Prioritize `explore` tool + file watcher | These are the two missing pieces that actually replace file reads. |
+| 2026-04-21 | **CodeGraph is primary reference** | Proves structural graph alone achieves 92% reduction. Simpler. Shipping. |
+| 2026-04-21 | **KiroGraph contributes ONLY hook-based sync** | Better timing than passive `cg.watch()`. Nothing else. |
+| 2026-04-21 | **Reject KiroGraph's 7 vector engines** | Over-engineered. One engine in Phase 3. |
+| 2026-04-21 | **Reject architecture analysis** | CodeGraph doesn't have it and still wins. |
+| 2026-04-21 | **Reject web UI / dashboard** | Out of scope for CLI agent tool. |
 
 ---
 
-## 7. References
+## 6. References
 
-- **CodeGraph** (colbymchenry): https://github.com/colbymchenry/codegraph — 14 languages, 92% fewer tool calls, `cg.watch()`, `codegraph_explore`
-- **KiroGraph**: https://dev.to/aws-builders/building-kirograph-a-100-local-semantic-code-knowledge-graph-for-kiro-2ja4 — 24 node kinds, 7 vector engines, embeddings, hooks
-- **KimiGraph** (this repo): https://github.com/rwn34/kimigraph — 3 languages, 9 node kinds, structural only, no watcher, no explore
+- **CodeGraph** (colbymchenry): https://github.com/colbymchenry/codegraph — Primary reference. 14 languages, 92% fewer tool calls, `codegraph_explore`, `cg.watch()`.
+- **KiroGraph**: https://dev.to/aws-builders/building-kirograph-a-100-local-semantic-code-knowledge-graph-for-kiro-2ja4 — Secondary reference. Contributes hook-based sync pattern ONLY.
