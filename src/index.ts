@@ -29,6 +29,7 @@ import { initGrammars } from './extraction/grammar';
 import { GraphTraverser } from './graph';
 import { ContextBuilder } from './context';
 import { ReferenceResolver } from './resolution';
+import { GraphWatcher } from './watcher';
 import { sha256, readFileSafe, isExcludedPath, Mutex } from './utils';
 import * as fs from 'fs';
 
@@ -53,6 +54,7 @@ export class KimiGraph {
   private projectRoot: string;
   private traverser: GraphTraverser;
   private contextBuilder: ContextBuilder;
+  private watcher: GraphWatcher | null = null;
   private indexMutex = new Mutex();
 
   private constructor(
@@ -118,7 +120,36 @@ export class KimiGraph {
   }
 
   close(): void {
+    this.unwatch();
     this.db.close();
+  }
+
+  // --------------------------------------------------------------------------
+  // WATCHER
+  // --------------------------------------------------------------------------
+
+  /** Start watching source files for changes and auto-sync. */
+  watch(opts?: { debounceMs?: number }): void {
+    if (this.watcher) return;
+    this.watcher = new GraphWatcher(
+      this.projectRoot,
+      async () => { await this.sync(); },
+      { debounceMs: opts?.debounceMs }
+    );
+    this.watcher.start();
+  }
+
+  /** Stop watching source files. */
+  unwatch(): void {
+    if (this.watcher) {
+      this.watcher.stop();
+      this.watcher = null;
+    }
+  }
+
+  /** Whether the graph is stale and waiting for sync. */
+  isDirty(): boolean {
+    return this.watcher?.isDirty() ?? false;
   }
 
   // --------------------------------------------------------------------------
