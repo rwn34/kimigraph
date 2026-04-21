@@ -21,15 +21,14 @@ export const ErrorCodes = {
 };
 
 export class StdioTransport {
-  private buffer = '';
+  private buffer = Buffer.alloc(0);
   private handler: ((msg: JsonRpcMessage) => Promise<unknown>) | null = null;
 
   start(handler: (msg: JsonRpcMessage) => Promise<unknown>): void {
     this.handler = handler;
 
-    process.stdin.setEncoding('utf8');
-    process.stdin.on('data', (chunk: string) => {
-      this.buffer += chunk;
+    process.stdin.on('data', (chunk: Buffer) => {
+      this.buffer = Buffer.concat([this.buffer, chunk]);
       this.processBuffer();
     });
 
@@ -53,22 +52,33 @@ export class StdioTransport {
 
   private processBuffer(): void {
     while (true) {
-      // Parse Content-Length header
-      const headerMatch = this.buffer.match(/Content-Length: (\d+)\r\n\r\n/);
-      if (!headerMatch) break;
+      // Find Content-Length header in buffer
+      const headerPattern = Buffer.from('Content-Length: ');
+      const headerStart = this.buffer.indexOf(headerPattern);
+      if (headerStart === -1) break;
 
-      const contentLength = parseInt(headerMatch[1], 10);
-      const headerEnd = headerMatch.index! + headerMatch[0].length;
+      const lengthEnd = this.buffer.indexOf('\r\n', headerStart);
+      if (lengthEnd === -1) break;
 
+      const contentLengthStr = this.buffer.slice(headerStart + headerPattern.length, lengthEnd).toString('utf8');
+      const contentLength = parseInt(contentLengthStr, 10);
+      if (isNaN(contentLength)) break;
+
+      const headerEnd = lengthEnd + 4; // skip \r\n\r\n
       if (this.buffer.length < headerEnd + contentLength) break;
 
-      const jsonStr = this.buffer.slice(headerEnd, headerEnd + contentLength);
+      const jsonBytes = this.buffer.slice(headerEnd, headerEnd + contentLength);
       this.buffer = this.buffer.slice(headerEnd + contentLength);
 
       try {
+        const jsonStr = jsonBytes.toString('utf8');
         const msg = JSON.parse(jsonStr) as JsonRpcMessage;
         if (this.handler) {
-          this.handler(msg).catch((err) => {
+          this.handler(msg).then((result) => {
+            if (result !== undefined && msg.id !== undefined) {
+              this.send({ jsonrpc: '2.0', id: msg.id, result });
+            }
+          }).catch((err) => {
             this.sendError(msg.id, ErrorCodes.InternalError, String(err));
           });
         }

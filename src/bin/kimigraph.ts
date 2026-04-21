@@ -144,6 +144,110 @@ program
   });
 
 // --------------------------------------------------------------------------
+// callers
+// --------------------------------------------------------------------------
+program
+  .command('callers <symbol>')
+  .description('Find symbols that call the given symbol')
+  .option('-l, --limit <n>', 'Max results', '10')
+  .action(async (symbol: string, options: { limit: string }) => {
+    try {
+      const kg = await KimiGraph.open('.');
+      const results = kg.searchNodes(symbol, { limit: 5 });
+      if (results.length === 0) {
+        console.log(`No symbol found matching "${symbol}"`);
+        kg.close();
+        return;
+      }
+      const node = results[0].node;
+      const callers = kg.getCallers(node.id, parseInt(options.limit, 10));
+      console.log(`Callers of ${node.kind} ${node.name} (${node.filePath}:${node.startLine}):`);
+      if (callers.length === 0) {
+        console.log('  (none)');
+      } else {
+        for (const c of callers) {
+          console.log(`  ${c.kind} ${c.name} — ${c.filePath}:${c.startLine}`);
+        }
+      }
+      kg.close();
+    } catch (err) {
+      logError(String(err));
+      process.exit(1);
+    }
+  });
+
+// --------------------------------------------------------------------------
+// callees
+// --------------------------------------------------------------------------
+program
+  .command('callees <symbol>')
+  .description('Find symbols called by the given symbol')
+  .option('-l, --limit <n>', 'Max results', '10')
+  .action(async (symbol: string, options: { limit: string }) => {
+    try {
+      const kg = await KimiGraph.open('.');
+      const results = kg.searchNodes(symbol, { limit: 5 });
+      if (results.length === 0) {
+        console.log(`No symbol found matching "${symbol}"`);
+        kg.close();
+        return;
+      }
+      const node = results[0].node;
+      const callees = kg.getCallees(node.id, parseInt(options.limit, 10));
+      console.log(`Callees of ${node.kind} ${node.name} (${node.filePath}:${node.startLine}):`);
+      if (callees.length === 0) {
+        console.log('  (none)');
+      } else {
+        for (const c of callees) {
+          console.log(`  ${c.kind} ${c.name} — ${c.filePath}:${c.startLine}`);
+        }
+      }
+      kg.close();
+    } catch (err) {
+      logError(String(err));
+      process.exit(1);
+    }
+  });
+
+// --------------------------------------------------------------------------
+// impact
+// --------------------------------------------------------------------------
+program
+  .command('impact <symbol>')
+  .description('Find symbols affected by changing the given symbol')
+  .option('-d, --depth <n>', 'Traversal depth', '3')
+  .option('-l, --limit <n>', 'Max results', '20')
+  .action(async (symbol: string, options: { depth: string; limit: string }) => {
+    try {
+      const kg = await KimiGraph.open('.');
+      const results = kg.searchNodes(symbol, { limit: 5 });
+      if (results.length === 0) {
+        console.log(`No symbol found matching "${symbol}"`);
+        kg.close();
+        return;
+      }
+      const node = results[0].node;
+      const impacted = kg.getImpactRadius(node.id, parseInt(options.depth, 10));
+      const limit = parseInt(options.limit, 10);
+      console.log(`Impact radius of ${node.kind} ${node.name} (${node.filePath}:${node.startLine}):`);
+      if (impacted.length === 0) {
+        console.log('  (none)');
+      } else {
+        for (const n of impacted.slice(0, limit)) {
+          console.log(`  ${n.kind} ${n.name} — ${n.filePath}:${n.startLine}`);
+        }
+        if (impacted.length > limit) {
+          console.log(`  ... and ${impacted.length - limit} more`);
+        }
+      }
+      kg.close();
+    } catch (err) {
+      logError(String(err));
+      process.exit(1);
+    }
+  });
+
+// --------------------------------------------------------------------------
 // context
 // --------------------------------------------------------------------------
 program
@@ -157,6 +261,10 @@ program
       console.log(ctx.summary);
       console.log('\nEntry Points:');
       for (const n of ctx.entryPoints) {
+        console.log(`  ${n.kind} ${n.name} — ${n.filePath}:${n.startLine}`);
+      }
+      console.log('\nRelated Symbols:');
+      for (const n of ctx.relatedNodes) {
         console.log(`  ${n.kind} ${n.name} — ${n.filePath}:${n.startLine}`);
       }
       kg.close();
