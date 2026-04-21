@@ -498,6 +498,7 @@ export class KimiGraph {
       python: ['.py'],
       go: ['.go'],
       rust: ['.rs'],
+      java: ['.java'],
     })) {
       if ((exts as string[]).includes(ext)) {
         return lang as Language;
