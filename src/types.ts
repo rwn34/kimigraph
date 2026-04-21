@@ -41,12 +41,13 @@ export type EdgeKind =
 // LANGUAGES
 // ============================================================================
 
-export type Language = 'typescript' | 'javascript' | 'python';
+export type Language = 'typescript' | 'javascript' | 'python' | 'go';
 
 export const LANGUAGE_EXTENSIONS: Record<Language, string[]> = {
   typescript: ['.ts', '.tsx'],
   javascript: ['.js', '.jsx', '.mjs', '.cjs'],
   python: ['.py'],
+  go: ['.go'],
 };
 
 export function detectLanguage(filePath: string): Language | null {
@@ -264,7 +265,7 @@ export interface KimiGraphConfig {
 
 export const DEFAULT_CONFIG: KimiGraphConfig = {
   version: 1,
-  languages: ['typescript', 'javascript', 'python'],
+  languages: ['typescript', 'javascript', 'python', 'go'],
   exclude: [
     'node_modules/**',
     'dist/**',

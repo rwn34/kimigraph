@@ -496,6 +496,7 @@ export class KimiGraph {
       typescript: ['.ts', '.tsx'],
       javascript: ['.js', '.jsx', '.mjs', '.cjs'],
       python: ['.py'],
+      go: ['.go'],
     })) {
       if ((exts as string[]).includes(ext)) {
         return lang as Language;

@@ -33,6 +33,7 @@ const LANGUAGE_MAP: Record<KimiGraphLanguage, string> = {
   typescript: 'tree-sitter-typescript.wasm',
   javascript: 'tree-sitter-javascript.wasm',
   python: 'tree-sitter-python.wasm',
+  go: 'tree-sitter-go.wasm',
 };
 
 const loadedLanguages = new Map<KimiGraphLanguage, Language>();
