@@ -18,6 +18,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest --run",
     "test:watch": "vitest",
+    "benchmark": "tsx scripts/benchmark.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "prepublishOnly": "npm run clean && npm run build"
   },

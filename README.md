@@ -173,15 +173,39 @@ Make sure `tree-sitter-wasms` is installed: `npm install tree-sitter-wasms`
 
 ## Roadmap
 
+**Phase 1 — Foundation (v0.1) ✅**
 - [x] TypeScript / JavaScript / Python extraction
 - [x] SQLite + FTS5 search
-- [x] Graph traversal (callers, callees, impact)
+- [x] Graph traversal (callers, callees, impact, paths)
 - [x] MCP server with 7 tools
-- [x] Reference resolution (basic)
+- [x] Reference resolution (cross-file imports)
+
+**Phase 2 — Operational (v0.2) 🔄**
+- [ ] `kimigraph_explore` tool (returns full source sections in one call)
+- [ ] File watcher for auto-sync
+- [ ] Kimi instructions / hooks (auto-use graph when `.kimigraph/` exists)
 - [ ] More languages (Go, Rust, Java)
+- [ ] Benchmarks (prove ≥70% tool-call reduction)
+
+**Phase 3 — Semantic (v0.3+) ⏸️**
 - [ ] Vector embeddings for semantic search
 - [ ] Architecture analysis (packages, layers, coupling)
-- [ ] File watcher for auto-sync
+
+> Phase 3 is **deliberately blocked** until Phase 2 exit criteria are met. See `PLAN.md`.
+
+## Honest Limitations
+
+KimiGraph is **not yet a replacement** for file reads during exploration. Before you use it, know what works and what doesn't:
+
+| Works ✅ | Doesn't yet ❌ |
+|----------|----------------|
+| Structural queries (callers, callees, impact) | `explore` tool that returns full source sections |
+| Manual `sync()` | Auto-sync file watcher |
+| 3 languages (TS/JS/Python) | Go, Rust, Java, etc. |
+| Exact-name + FTS5 search | Semantic / natural-language search |
+| Cross-file call resolution (TS/JS) | Cross-language call resolution |
+
+The graph stays accurate if you run `kimigraph sync` after edits. If you don't, it goes stale.
 
 ## License
 

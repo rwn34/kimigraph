@@ -6,6 +6,7 @@ import * as path from 'path';
 import {
   KimiGraphConfig,
   Node,
+  Edge,
   IndexResult,
   SyncResult,
   TaskContext,
@@ -375,6 +376,10 @@ export class KimiGraph {
 
   getImpactRadius(nodeId: string, depth = 2): Node[] {
     return this.queries.getImpactRadius(nodeId, depth);
+  }
+
+  findPath(fromId: string, toId: string): { nodes: Node[]; edges: Edge[] } {
+    return this.traverser.findPath(fromId, toId);
   }
 
   async buildContext(task: string, opts?: BuildContextOptions): Promise<TaskContext> {
