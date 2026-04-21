@@ -23,6 +23,7 @@ import {
   isInitialized,
   createDirectory,
   validateDirectory,
+  writeAgentInstructions,
 } from './directory';
 import { extractFromSource } from './extraction';
 import { initGrammars } from './extraction/grammar';
@@ -84,6 +85,7 @@ export class KimiGraph {
     }
 
     createDirectory(resolved);
+    writeAgentInstructions(resolved);
     const cfg = { ...createDefaultConfig(resolved), ...config };
     saveConfig(resolved, cfg);
 
