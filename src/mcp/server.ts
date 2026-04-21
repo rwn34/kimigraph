@@ -34,6 +34,7 @@ export class MCPServer {
     this.projectPath = root;
     try {
       this.kg = await KimiGraph.open(root);
+      this.kg.watch();
       this.toolHandler.setDefaultKimiGraph(this.kg);
     } catch (err) {
       process.stderr.write(`[KimiGraph MCP] Failed to open ${root}: ${err}\n`);
