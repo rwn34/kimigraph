@@ -1,0 +1,31 @@
+{
+  "results": [
+    {
+      "project": "rwn-kimigraph",
+      "totalFiles": 51,
+      "questions": [
+        {
+          "query": "How does the database layer work?",
+          "exploreCalls": 1,
+          "filesCovered": 6,
+          "sectionsReturned": 25
+        },
+        {
+          "query": "Trace the reference resolution flow",
+          "exploreCalls": 1,
+          "filesCovered": 0,
+          "sectionsReturned": 0
+        },
+        {
+          "query": "How is context built for a task?",
+          "exploreCalls": 1,
+          "filesCovered": 9,
+          "sectionsReturned": 22
+        }
+      ],
+      "avgFilesCovered": 5,
+      "fileReductionPercent": 90
+    }
+  ],
+  "overallAvgReduction": 90
+}
