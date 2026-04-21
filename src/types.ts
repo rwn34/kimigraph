@@ -197,6 +197,14 @@ export interface BuildContextOptions {
   includeCode?: boolean;
 }
 
+export type ExploreBudget = 'small' | 'medium' | 'large';
+
+export interface ExploreOptions {
+  query: string;
+  budget?: ExploreBudget;
+  projectPath?: string;
+}
+
 // ============================================================================
 // INDEXING
 // ============================================================================

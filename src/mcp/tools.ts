@@ -122,6 +122,19 @@ export const tools: ToolDefinition[] = [
       },
     },
   },
+  {
+    name: 'kimigraph_explore',
+    description: 'PRIMARY EXPLORATION TOOL: Answer broad codebase questions by returning full source sections for all relevant symbols in ONE call. Use this INSTEAD of reading individual files when exploring architecture, tracing flows, or understanding how a feature works. Returns complete code snippets with file paths and line ranges.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Natural language question or topic to explore, e.g. "How does authentication work?" or "Trace the request flow"' },
+        budget: { type: 'string', description: 'Context budget: small (~10 symbols), medium (~20 symbols), large (~40 symbols). Use small for targeted questions, large for broad architecture questions.', enum: ['small', 'medium', 'large'], default: 'medium' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['query'],
+    },
+  },
 ];
 
 export class ToolHandler {
@@ -275,6 +288,67 @@ export class ToolHandler {
           langLine ? `  By language: ${langLine}` : '',
           `  DB size: ${dbMb} MB`,
         ].filter(Boolean).join('\n');
+      }
+
+      case 'kimigraph_explore': {
+        const budget = (args.budget as string) ?? 'medium';
+        const maxNodes = budget === 'small' ? 10 : budget === 'large' ? 40 : 20;
+        const ctx = await kg.buildContext(args.query as string, {
+          maxNodes,
+          includeCode: true,
+        });
+
+        if (ctx.entryPoints.length === 0) {
+          return `No relevant symbols found for "${args.query}". Try a more specific query or check if the project is indexed.`;
+        }
+
+        const lines: string[] = [];
+        lines.push(`## Exploration: ${args.query}`);
+        lines.push('');
+        lines.push(`Budget: ${budget} | Symbols: ${ctx.entryPoints.length + ctx.relatedNodes.length}`);
+        lines.push('');
+        lines.push('---');
+        lines.push('');
+
+        // Entry points with full source
+        lines.push(`### Entry Points (${ctx.entryPoints.length})`);
+        lines.push('');
+        for (const n of ctx.entryPoints) {
+          lines.push(`#### ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}-${n.endLine}`);
+          if (n.signature) lines.push(`*Signature:* \`${n.signature}\``);
+          if (n.docstring) lines.push(`*Docs:* ${n.docstring}`);
+          const code = ctx.codeSnippets.get(n.id);
+          if (code) {
+            lines.push('');
+            lines.push('```typescript');
+            lines.push(code);
+            lines.push('```');
+          }
+          lines.push('');
+        }
+
+        // Related symbols with full source
+        if (ctx.relatedNodes.length > 0) {
+          lines.push(`### Related Symbols (${ctx.relatedNodes.length})`);
+          lines.push('');
+          for (const n of ctx.relatedNodes) {
+            lines.push(`#### ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}-${n.endLine}`);
+            const code = ctx.codeSnippets.get(n.id);
+            if (code) {
+              lines.push('');
+              lines.push('```typescript');
+              lines.push(code);
+              lines.push('```');
+            }
+            lines.push('');
+          }
+        }
+
+        lines.push('---');
+        lines.push('');
+        lines.push(`*End of exploration for "${args.query}"*`);
+
+        return lines.join('\n');
       }
 
       default:
