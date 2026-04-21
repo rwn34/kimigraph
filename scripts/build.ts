@@ -76,6 +76,14 @@ async function build(): Promise<void> {
     }
   }
 
+  // Generate TypeScript declarations
+  try {
+    const { execSync } = require('child_process');
+    execSync('tsc --emitDeclarationOnly', { stdio: 'inherit' });
+  } catch {
+    // tsc may emit errors for bundled files; declarations are best-effort
+  }
+
   console.log(`Build complete: ${OUTDIR}/`);
 }
 

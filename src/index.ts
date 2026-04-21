@@ -29,7 +29,6 @@ import { GraphTraverser } from './graph';
 import { ContextBuilder } from './context';
 import { ReferenceResolver } from './resolution';
 import { sha256, readFileSafe, isExcludedPath, Mutex } from './utils';
-import { logInfo } from './errors';
 import * as fs from 'fs';
 
 export { initGrammars } from './extraction/grammar';

@@ -9,6 +9,15 @@ import { Language as KimiGraphLanguage } from '../types';
 import { logDebug } from '../errors';
 
 function getGrammarDir(): string {
+  // Try require.resolve first for installed packages
+  try {
+    const modPath = require.resolve('tree-sitter-wasms/package.json');
+    const dir = path.join(path.dirname(modPath), 'out');
+    if (fs.existsSync(dir)) return dir;
+  } catch {
+    // fall through
+  }
+
   const candidates = [
     path.join(__dirname, '..', '..', 'node_modules', 'tree-sitter-wasms', 'out'),
     path.join(__dirname, '..', '..', '..', 'node_modules', 'tree-sitter-wasms', 'out'),

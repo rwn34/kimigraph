@@ -49,6 +49,7 @@ export async function extractFromSource(
     return {
       nodes: [],
       edges: [],
+      unresolvedRefs: [],
       errors: [{ filePath, message: 'Unsupported language' }],
     };
   }
@@ -63,6 +64,7 @@ export async function extractFromSource(
       return {
         nodes: [],
         edges: [],
+        unresolvedRefs: [],
         errors: [{ filePath, message: 'Failed to parse source' }],
       };
     }
@@ -72,6 +74,7 @@ export async function extractFromSource(
       return {
         nodes: [],
         edges: [],
+        unresolvedRefs: [],
         errors: [{ filePath, message: `No query file for language: ${lang}` }],
       };
     }
@@ -98,6 +101,7 @@ export async function extractFromSource(
     return {
       nodes: [],
       edges: [],
+      unresolvedRefs: [],
       errors: [{ filePath, message }],
     };
   }
@@ -510,11 +514,6 @@ class Extractor {
   private makeId(kind: string, name: string, line: number): string {
     const safeName = name.replace(/[^a-zA-Z0-9_$]/g, '_');
     return `${kind}:${this.filePath}:${safeName}:${line}`;
-  }
-
-  private makeUnresolvedId(kind: string, name: string): string {
-    const safeName = name.replace(/[^a-zA-Z0-9_$]/g, '_');
-    return `unresolved:${kind}:${safeName}`;
   }
 
   private findNodeIdForSyntaxNode(syntaxNode: SyntaxNode): string | null {
