@@ -31,12 +31,9 @@ export type EdgeKind =
   | 'contains'
   | 'calls'
   | 'imports'
-  | 'exports'
   | 'extends'
   | 'implements'
   | 'references'
-  | 'returns'
-  | 'type_of'
   | 'ffi';
 
 // ============================================================================

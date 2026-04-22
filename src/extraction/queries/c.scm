@@ -23,6 +23,22 @@
     name: (type_identifier)? @class.name)
   declarator: (type_identifier) @class.name) @class.definition
 
+; Enums
+(enum_specifier
+  name: (type_identifier) @enum.name) @enum.definition
+
+; Enum members
+(enumerator
+  name: (identifier) @enum_member.name) @enum_member.definition
+
+; Struct/union fields
+(field_declaration
+  declarator: (field_identifier) @property.name) @property.definition
+
+(field_declaration
+  declarator: (pointer_declarator
+    declarator: (field_identifier) @property.name)) @property.definition
+
 ; Function calls
 (call_expression
   function: (identifier) @call.function) @call.expression

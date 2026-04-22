@@ -733,7 +733,7 @@ class Extractor {
     }
     if (!sourceId) return;
 
-    // Find target by name (best effort)
+    // Find target by name in current file (same-file resolution)
     const targetName = parentNode.text;
     for (const [id, node] of this.nodeMap) {
       if ((node.kind === 'class' || node.kind === 'interface' || node.kind === 'enum') &&
@@ -742,6 +742,16 @@ class Extractor {
         return;
       }
     }
+
+    // Parent not found locally — queue for cross-file resolution
+    this.unresolvedRefs.push({
+      sourceId,
+      refName: targetName,
+      refKind: kind, // 'extends' or 'implements'
+      filePath: this.filePath,
+      line: parentNode.startPosition.row + 1,
+      column: parentNode.startPosition.column,
+    });
   }
 
   private addCall(
@@ -838,24 +848,106 @@ class Extractor {
   }
 
   private extractDocstring(node: SyntaxNode): string | undefined {
-    const startLine = node.startPosition.row;
+    const startLine = node.startPosition.row; // 0-based
     const lines = this.source.split('\n');
 
-    if (startLine > 0) {
-      const prevLine = lines[startLine - 1].trim();
-      if (prevLine.startsWith('//') || prevLine.startsWith('#') || prevLine.startsWith('*')) {
-        return prevLine.replace(/^[/*#\s]+/, '').trim();
-      }
+    // Strategy 1 (Python only): body docstring takes priority over preceding comments.
+    if (this.language === 'python') {
+      const bodyDocstring = this.extractPythonDocstring(node);
+      if (bodyDocstring) return bodyDocstring;
     }
 
-    for (let i = 0; i < node.childCount; i++) {
-      const child = node.child(i);
-      if (child && (child.type === 'comment' || child.type === 'string')) {
-        return child.text.replace(/^['"\s]+|['"\s]+$/g, '').trim();
+    // Strategy 2: Collect consecutive line comments immediately before the definition.
+    // Covers: JS/TS //, Go //, Rust ///, Java //, C# //, C/C++ //, Python #
+    const commentLines: string[] = [];
+    let currentLine = startLine - 1;
+
+    while (currentLine >= 0) {
+      const rawLine = lines[currentLine];
+      const trimmed = rawLine.trim();
+
+      if (trimmed.startsWith('//') || trimmed.startsWith('#')) {
+        commentLines.unshift(rawLine);
+        currentLine--;
+        continue;
       }
+
+      // Block comment end: look backward for /*
+      if (trimmed.endsWith('*/')) {
+        const blockLines: string[] = [];
+        let blockStart = currentLine;
+        while (blockStart >= 0) {
+          blockLines.unshift(lines[blockStart]);
+          if (lines[blockStart].trim().startsWith('/*')) {
+            break;
+          }
+          blockStart--;
+        }
+        if (blockLines.length > 0 && blockLines[0].trim().startsWith('/*')) {
+          return this.cleanBlockComment(blockLines.join('\n'));
+        }
+        break;
+      }
+
+      // Empty line or non-comment code stops the scan
+      if (trimmed === '' || !trimmed.startsWith('//')) {
+        break;
+      }
+      break;
+    }
+
+    if (commentLines.length > 0) {
+      return this.cleanLineComments(commentLines);
     }
 
     return undefined;
+  }
+
+  private extractPythonDocstring(node: SyntaxNode): string | undefined {
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && child.type === 'block') {
+        const firstStmt = child.child(0);
+        if (firstStmt && firstStmt.type === 'expression_statement') {
+          const expr = firstStmt.child(0);
+          if (expr && expr.type === 'string') {
+            return this.cleanPythonDocstring(expr.text);
+          }
+        }
+        // Some grammar versions place string directly under block
+        const first = child.child(0);
+        if (first && first.type === 'string') {
+          return this.cleanPythonDocstring(first.text);
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private cleanLineComments(lines: string[]): string {
+    return lines
+      .map((line) => {
+        const trimmed = line.trim();
+        return trimmed.replace(/^\/\/+\s?|^#\s?/, '').trim();
+      })
+      .join('\n');
+  }
+
+  private cleanBlockComment(text: string): string {
+    return text
+      .replace(/\/\*\*?\s*/, '') // remove opening /* or /**
+      .replace(/\s*\*\/$/, '')   // remove closing */
+      .split('\n')
+      .map((line) => line.trim().replace(/^\*\s?/, '').trim()) // remove leading *
+      .join('\n')
+      .trim();
+  }
+
+  private cleanPythonDocstring(text: string): string {
+    return text
+      .replace(/^[furbFURB]?("""|''')/, '') // remove opening quotes (with optional prefix)
+      .replace(/("""|''')$/, '')            // remove closing quotes
+      .trim();
   }
 
   private hasChildOfType(node: SyntaxNode, type: string): boolean {
@@ -891,6 +983,11 @@ class Extractor {
 
     // Go: capitalized name
     if (this.language === 'go' && name.length > 0 && name[0] === name[0].toUpperCase()) {
+      return true;
+    }
+
+    // Python: no leading underscore (public by convention)
+    if (this.language === 'python' && !name.startsWith('_')) {
       return true;
     }
 

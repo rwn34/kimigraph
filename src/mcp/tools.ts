@@ -144,6 +144,19 @@ export const tools: ToolDefinition[] = [
     },
   },
   {
+    name: 'kimigraph_path',
+    description: 'Find the shortest path between two symbols through the call/import graph. Shows how code flows from A to B.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Starting symbol name' },
+        to: { type: 'string', description: 'Target symbol name' },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['from', 'to'],
+    },
+  },
+  {
     name: 'kimigraph_explore',
     description: 'PRIMARY EXPLORATION TOOL: Answer broad codebase questions by returning full source sections for all relevant symbols in ONE call. Use this INSTEAD of reading individual files when exploring architecture, tracing flows, or understanding how a feature works. Returns complete code snippets with file paths and line ranges.',
     inputSchema: {
@@ -331,6 +344,29 @@ export class ToolHandler {
         return `Found ${cycles.length} import cycle(s):\n\n` + cycles.map((cycle, i) =>
           `Cycle ${i + 1}:\n` + cycle.map((f) => `  → ${f}`).join('\n')
         ).join('\n\n');
+      }
+
+      case 'kimigraph_path': {
+        const fromResults = await kg.searchNodes(args.from as string, { limit: 5 });
+        const toResults = await kg.searchNodes(args.to as string, { limit: 5 });
+        if (fromResults.length === 0) return `Symbol "${args.from}" not found.`;
+        if (toResults.length === 0) return `Symbol "${args.to}" not found.`;
+        const fromNode = fromResults[0].node;
+        const toNode = toResults[0].node;
+        const pathResult = kg.findPath(fromNode.id, toNode.id);
+        if (pathResult.nodes.length === 0) {
+          return `No path found from \`${fromNode.name}\` to \`${toNode.name}\` within the graph.`;
+        }
+        const lines = [`Path from \`${fromNode.name}\` to \`${toNode.name}\` (${pathResult.nodes.length} hops):`];
+        for (let i = 0; i < pathResult.nodes.length; i++) {
+          const n = pathResult.nodes[i];
+          lines.push(`${i + 1}. ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`);
+          if (i < pathResult.edges.length) {
+            const e = pathResult.edges[i];
+            lines.push(`   → ${e.kind}`);
+          }
+        }
+        return lines.join('\n');
       }
 
       case 'kimigraph_explore': {

@@ -84,6 +84,23 @@ func bar() {}
     expect(foo!.isExported).toBe(true);
     expect(bar!.isExported).toBeFalsy();
   });
+
+  it('detects Python exported functions by convention (no leading underscore)', async () => {
+    const code = `
+def public_func():
+    pass
+
+def _private_func():
+    pass
+`;
+    const result = await extractFromSource('meta.py', code, 'python');
+    const pub = result.nodes.find((n) => n.name === 'public_func');
+    const priv = result.nodes.find((n) => n.name === '_private_func');
+    expect(pub).toBeDefined();
+    expect(priv).toBeDefined();
+    expect(pub!.isExported).toBe(true);
+    expect(priv!.isExported).toBe(false);
+  });
 });
 
 describe('Inheritance edges', () => {

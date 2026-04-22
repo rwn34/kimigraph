@@ -38,6 +38,32 @@ describe('Non-JS resolution', () => {
       'utf8'
     );
 
+    // Java: Main.java imports Helper from utils package
+    fs.mkdirSync(path.join(FIXTURE_DIR, 'com', 'example'), { recursive: true });
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'com', 'example', 'Helper.java'),
+      `package com.example;\n\npublic class Helper {\n    public static void help() {}\n}\n`,
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'Main.java'),
+      `import com.example.Helper;\n\npublic class Main {\n    public static void main(String[] args) {\n        Helper.help();\n    }\n}\n`,
+      'utf8'
+    );
+
+    // Rust: main.rs uses crate::helper::assist
+    fs.mkdirSync(path.join(FIXTURE_DIR, 'src'), { recursive: true });
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'src', 'helper.rs'),
+      `pub fn assist() {}\n`,
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'src', 'main.rs'),
+      `use crate::helper::assist;\n\nfn main() {\n    assist();\n}\n`,
+      'utf8'
+    );
+
     kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
   }, 30000);
@@ -61,6 +87,24 @@ describe('Non-JS resolution', () => {
     expect(fooNode).toBeDefined();
     // Foo should have a caller from main.go
     const callers = kg.getCallers(fooNode!.node.id);
+    expect(callers.length).toBeGreaterThan(0);
+  });
+
+  it('resolves Java cross-file calls via import map', async () => {
+    const results = await kg.searchNodes('help');
+    const helpNode = results.find((r) => r.node.name === 'help');
+    expect(helpNode).toBeDefined();
+    // help() should have a caller from Main.java
+    const callers = kg.getCallers(helpNode!.node.id);
+    expect(callers.length).toBeGreaterThan(0);
+  });
+
+  it('resolves Rust cross-module calls via import map', async () => {
+    const results = await kg.searchNodes('assist');
+    const assistNode = results.find((r) => r.node.name === 'assist');
+    expect(assistNode).toBeDefined();
+    // assist() should have a caller from main.rs
+    const callers = kg.getCallers(assistNode!.node.id);
     expect(callers.length).toBeGreaterThan(0);
   });
 });

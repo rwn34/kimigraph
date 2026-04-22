@@ -307,13 +307,17 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Cross-language FFI** | WASM imports, Node-API, and FFI boundaries mostly not traced | 🟡 **Partially fixed** — JS-side `import` from `.wasm` and `require('./addon.node')` are now detected and graphed as `ffi` edges |
 | **Comments outside symbols** | Docstrings attached to symbols only; free-floating comments not indexed | ✅ **Fixed** — all line and block comments are extracted as `comment` nodes and indexed in FTS |
 | **Anonymous functions** | Callbacks and lambdas may not get meaningful names | ✅ **Fixed** — arrow functions, lambdas, closures, and func literals detected across all 9 languages with synthetic names (`anonymous_at_line_42`) |
-| **Type hierarchy** | `extends`/`implements` edges never created; `getTypeHierarchy()` always empty | ✅ **Fixed** — inheritance extracted for TS, Java, C#, Go, Rust |
+| **Type hierarchy** | `extends`/`implements` edges never created; `getTypeHierarchy()` always empty | ✅ **Fixed** — inheritance extracted for TS, Java, C#, Go, Rust, C++; cross-file resolution via `ReferenceResolver` |
 | **Enums / properties / constants** | Enums mapped to `class`, no property or constant nodes | ✅ **Fixed** — `enum`, `enum_member`, `property`, `constant` kinds now populated |
 | **Python methods** | Methods inside classes captured as top-level `function` | ✅ **Fixed** — Python class methods extracted as `method` kind with `ClassName.methodName` qualified names |
 | **Go variables & constants** | Package-level `var` and `const` blocks invisible | ✅ **Fixed** — `var_declaration` and `const_declaration` captured |
-| **Non-JS cross-file resolution** | Python `from/import`, Go `import` not resolved; relied on fragile global name match | ✅ **Fixed** — `buildImportMap()` parses Python and Go imports; cross-file call edges resolved |
+| **Non-JS cross-file resolution** | Python `from/import`, Go `import` not resolved; relied on fragile global name match | ✅ **Fixed** — `buildImportMap()` parses Python, Go, Java, and Rust imports; cross-file call edges resolved |
 | **Dead code / cycles** | `findDeadCode()` and `findCircularDependencies()` existed but unexposed | ✅ **Fixed** — exposed as `kimigraph_dead_code` and `kimigraph_cycles` MCP tools |
-| **Docstring extraction** | Only single-line `//`/`#` previews captured; multi-line JSDoc, `""""""`, `///` missed | 🟡 **Partially fixed** — still single-line heuristic, but `docstring` field is populated for all nodes |
+| **Docstring extraction** | Only single-line `//`/`#` previews captured; multi-line JSDoc, `""""""`, `///` missed | ✅ **Fixed** — `extractDocstring()` collects consecutive preceding line comments, parses `/** ... */` blocks, and extracts Python `"""..."""` docstrings from function/class bodies |
+| **C/C++ extraction** | C only captured functions/structs; C++ missed inheritance, struct fields, enum members | ✅ **Fixed** — C now extracts enum members and struct fields; C++ extracts class inheritance (`extends`) and fields |
+| **Python export detection** | All Python symbols marked `isExported: false` | ✅ **Fixed** — names without leading underscore are `isExported: true` (Python convention) |
+| **Cross-file inheritance** | `extends`/`implements` only resolved within the same file | ✅ **Fixed** — unresolved parent names queued as refs and resolved project-wide by `ReferenceResolver` |
+| **findPath unexposed** | `GraphTraverser.findPath()` existed but had no MCP tool | ✅ **Fixed** — exposed as `kimigraph_path` MCP tool |
 
 ### Performance notes
 
@@ -360,6 +364,12 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 - [x] Extract Go variables and constants
 - [x] Resolve Python and Go imports for cross-file call edges
 - [x] Expose `findDeadCode` and `findCircularDependencies` as MCP tools
+- [x] Multi-line docstring extraction (JSDoc, Python `"""`, Rust `///`, Go `//`)
+- [x] C/C++ struct fields, enum members, and class inheritance
+- [x] Python `isExported` detection (no leading underscore = public)
+- [x] Java and Rust import parsing for cross-file resolution
+- [x] Cross-file inheritance resolution (`extends`/`implements` across files)
+- [x] Expose `findPath` as `kimigraph_path` MCP tool
 - [ ] Type-aware search (find by signature: `"User -> string"`)
 - [ ] Cross-language resolution (WASM → C++ symbols, protobuf boundaries)
 - [ ] Incremental embedding updates (only re-embed changed symbols)
