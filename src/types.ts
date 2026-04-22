@@ -20,7 +20,8 @@ export type NodeKind =
   | 'enum'
   | 'enum_member'
   | 'import'
-  | 'export';
+  | 'export'
+  | 'comment';
 
 // ============================================================================
 // EDGE KINDS

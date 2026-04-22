@@ -28,6 +28,12 @@
   )
 ) @variable.assignment
 
+; Comments
+(comment) @comment.definition
+
+; Anonymous functions
+(lambda) @anonymous.definition
+
 ; Function calls
 (call
   function: [

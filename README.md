@@ -305,8 +305,8 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Macros / code generation** | Preprocessor macros, templates, and codegen not expanded | ❌ Out of scope — C macros need a preprocessor; templates need compile-time instantiation |
 | **Reflection** | Reflection-based calls (e.g., `Class.forName`) not resolved | ❌ Out of scope — string values can't be traced statically through arbitrary program flow |
 | **Cross-language FFI** | WASM imports, Node-API, and FFI boundaries mostly not traced | 🟡 **Partially fixed** — JS-side `import` from `.wasm` and `require('./addon.node')` are now detected and graphed as `ffi` edges |
-| **Comments outside symbols** | Docstrings attached to symbols only; free-floating comments not indexed | ✅ Fixable now — tree-sitter can extract all comments; just needs indexing logic |
-| **Anonymous functions** | Callbacks and lambdas may not get meaningful names | ✅ Fixable now — tree-sitter detects lambdas / arrow functions; synthetic names (`callback_at_line_42`) are straightforward |
+| **Comments outside symbols** | Docstrings attached to symbols only; free-floating comments not indexed | ✅ **Fixed** — all line and block comments are extracted as `comment` nodes and indexed in FTS |
+| **Anonymous functions** | Callbacks and lambdas may not get meaningful names | ✅ **Fixed** — arrow functions, lambdas, closures, and func literals detected across all 9 languages with synthetic names (`anonymous_at_line_42`) |
 
 ### Performance notes
 

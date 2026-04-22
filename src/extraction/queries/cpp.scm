@@ -35,6 +35,12 @@
   function: (qualified_identifier
     name: (identifier) @call.function)) @call.expression
 
+; Comments
+(comment) @comment.definition
+
+; Anonymous functions
+(lambda_expression) @anonymous.definition
+
 ; Includes
 (preproc_include
   path: (string_literal) @import.source) @import.statement

@@ -31,6 +31,9 @@
   function: (field_expression
     field: (field_identifier) @call.method)) @call.expression
 
+; Comments
+(comment) @comment.definition
+
 ; Includes
 (preproc_include
   path: (string_literal) @import.source) @import.statement

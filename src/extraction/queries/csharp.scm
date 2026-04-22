@@ -32,6 +32,13 @@
   function: (member_access_expression
     name: (identifier) @call.method)) @call.expression
 
+; Comments
+(comment) @comment.definition
+
+; Anonymous functions
+(lambda_expression) @anonymous.definition
+(anonymous_method_expression) @anonymous.definition
+
 ; Using directives
 (using_directive
   (identifier) @import.source) @import.statement

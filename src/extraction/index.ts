@@ -177,29 +177,39 @@ class Extractor {
       }
     }
 
-    // Process each definition
-    for (const def of defs) {
-      // Find all related captures that are within or equal to this definition node
-      const related = others.filter((o) =>
-        o.node.id === def.node.id || this.isDescendant(o.node, def.node)
-      );
+    // Assign each 'other' capture to its innermost containing definition.
+    // This ensures calls inside anonymous functions are attributed to the
+    // anonymous function, not the outer named function.
+    const groups = new Map<number, Map<string, SyntaxNode[]>>();
 
-      const group = new Map<string, SyntaxNode[]>();
-      group.set(def.name, [def.node]);
-      for (const r of related) {
-        if (!group.has(r.name)) group.set(r.name, []);
-        group.get(r.name)!.push(r.node);
+    for (const other of others) {
+      let innermostIdx = -1;
+      for (let i = 0; i < defs.length; i++) {
+        const def = defs[i];
+        if (other.node.id === def.node.id || this.isDescendant(other.node, def.node)) {
+          if (innermostIdx === -1 || this.isDescendant(def.node, defs[innermostIdx].node)) {
+            innermostIdx = i;
+          }
+        }
       }
 
-      this.processGroup(group);
+      if (innermostIdx >= 0) {
+        if (!groups.has(innermostIdx)) {
+          groups.set(innermostIdx, new Map());
+        }
+        const group = groups.get(innermostIdx)!;
+        if (!group.has(other.name)) group.set(other.name, []);
+        group.get(other.name)!.push(other.node);
+      } else {
+        this.processStandalone(other);
+      }
     }
 
-    // Process standalone captures (calls, imports not tied to definitions)
-    const standalone = others.filter((o) =>
-      !defs.some((d) => o.node.id === d.node.id || this.isDescendant(o.node, d.node))
-    );
-    for (const cap of standalone) {
-      this.processStandalone(cap);
+    // Process each definition with its assigned group
+    for (let i = 0; i < defs.length; i++) {
+      const group = groups.get(i) ?? new Map();
+      group.set(defs[i].name, [defs[i].node]);
+      this.processGroup(group);
     }
   }
 
@@ -224,6 +234,8 @@ class Extractor {
       const fnNode = cap.name === 'call.function' ? cap.node : undefined;
       const methodNode = cap.name === 'call.method' ? cap.node : undefined;
       this.addCall(callNode, fnNode, methodNode, undefined);
+    } else if (cap.name === 'comment.definition') {
+      this.addComment(cap.node);
     }
   }
 
@@ -302,6 +314,22 @@ class Extractor {
     if (group.has('export.statement')) {
       const stmtNode = group.get('export.statement')![0];
       this.addExport(stmtNode);
+    }
+
+    // Comment definitions
+    if (group.has('comment.definition')) {
+      const commentNodes = group.get('comment.definition') ?? [];
+      for (const commentNode of commentNodes) {
+        this.addComment(commentNode);
+      }
+    }
+
+    // Anonymous function definitions
+    if (group.has('anonymous.definition')) {
+      const anonNodes = group.get('anonymous.definition') ?? [];
+      for (const anonNode of anonNodes) {
+        this.addAnonymousFunction(anonNode);
+      }
     }
 
     // Call expressions within this definition
@@ -483,6 +511,50 @@ class Extractor {
       startLine: stmtNode.startPosition.row + 1,
       endLine: stmtNode.endPosition.row + 1,
       language: this.language,
+      updatedAt: Date.now(),
+    };
+    this.addNode(node);
+    this.addEdge(this.fileNodeId, id, 'contains');
+  }
+
+  private addComment(commentNode: SyntaxNode): void {
+    const text = commentNode.text;
+    const line = commentNode.startPosition.row + 1;
+    const preview = text.length > 80 ? text.slice(0, 80) + '...' : text;
+    const id = this.makeId('comment', `line_${line}`, line);
+    const node: Node = {
+      id,
+      kind: 'comment',
+      name: preview,
+      filePath: this.filePath,
+      startLine: line,
+      endLine: commentNode.endPosition.row + 1,
+      startColumn: commentNode.startPosition.column,
+      endColumn: commentNode.endPosition.column,
+      language: this.language,
+      docstring: text,
+      updatedAt: Date.now(),
+    };
+    this.addNode(node);
+    this.addEdge(this.fileNodeId, id, 'contains');
+  }
+
+  private addAnonymousFunction(defNode: SyntaxNode): void {
+    const line = defNode.startPosition.row + 1;
+    const syntheticName = `anonymous_at_line_${line}`;
+    const id = this.makeId('function', syntheticName, line);
+    const node: Node = {
+      id,
+      kind: 'function',
+      name: syntheticName,
+      qualifiedName: syntheticName,
+      filePath: this.filePath,
+      startLine: line,
+      endLine: defNode.endPosition.row + 1,
+      startColumn: defNode.startPosition.column,
+      endColumn: defNode.endPosition.column,
+      language: this.language,
+      docstring: this.extractDocstring(defNode),
       updatedAt: Date.now(),
     };
     this.addNode(node);

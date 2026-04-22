@@ -83,6 +83,13 @@
 ; Export statements
 (export_statement) @export.statement
 
+; Comments
+(comment) @comment.definition
+
+; Anonymous functions
+(arrow_function) @anonymous.definition
+(function_expression) @anonymous.definition
+
 ; Function calls
 (call_expression
   function: [
