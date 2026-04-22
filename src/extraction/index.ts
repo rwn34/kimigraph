@@ -361,6 +361,9 @@ class Extractor {
       endColumn: defNode.endPosition.column,
       language: this.language,
       docstring: this.extractDocstring(defNode),
+      signature: this.extractSignature(defNode),
+      isExported: this.isNodeExported(defNode, name),
+      isAsync: this.hasChildOfType(defNode, 'async'),
       updatedAt: Date.now(),
     };
     this.addNode(node);
@@ -369,11 +372,14 @@ class Extractor {
 
   private addMethod(nameNode: SyntaxNode, defNode: SyntaxNode): void {
     const name = nameNode.text;
+    const className = this.getEnclosingClassName(defNode);
+    const qualifiedName = className ? `${className}.${name}` : name;
     const id = this.makeId('method', name, nameNode.startPosition.row + 1);
     const node: Node = {
       id,
       kind: 'method',
       name,
+      qualifiedName,
       filePath: this.filePath,
       startLine: defNode.startPosition.row + 1,
       endLine: defNode.endPosition.row + 1,
@@ -381,6 +387,11 @@ class Extractor {
       endColumn: defNode.endPosition.column,
       language: this.language,
       docstring: this.extractDocstring(defNode),
+      signature: this.extractSignature(defNode),
+      isExported: this.isNodeExported(defNode, name),
+      isAsync: this.hasChildOfType(defNode, 'async'),
+      isStatic: this.hasChildOfType(defNode, 'static'),
+      isAbstract: this.hasChildOfType(defNode, 'abstract') || defNode.type === 'abstract_method_signature',
       updatedAt: Date.now(),
     };
     this.addNode(node);
@@ -401,6 +412,8 @@ class Extractor {
       endColumn: defNode.endPosition.column,
       language: this.language,
       docstring: this.extractDocstring(defNode),
+      isExported: this.isNodeExported(defNode, name),
+      isAbstract: this.hasChildOfType(defNode, 'abstract'),
       updatedAt: Date.now(),
     };
     this.addNode(node);
@@ -420,6 +433,7 @@ class Extractor {
       startColumn: defNode.startPosition.column,
       endColumn: defNode.endPosition.column,
       language: this.language,
+      isExported: this.isNodeExported(defNode, name),
       updatedAt: Date.now(),
     };
     this.addNode(node);
@@ -643,6 +657,17 @@ class Extractor {
     return null;
   }
 
+  private extractSignature(node: SyntaxNode): string | undefined {
+    const paramTypes = ['formal_parameters', 'parameter_list', 'parameters'];
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && paramTypes.includes(child.type)) {
+        return child.text;
+      }
+    }
+    return undefined;
+  }
+
   private extractDocstring(node: SyntaxNode): string | undefined {
     const startLine = node.startPosition.row;
     const lines = this.source.split('\n');
@@ -662,5 +687,67 @@ class Extractor {
     }
 
     return undefined;
+  }
+
+  private hasChildOfType(node: SyntaxNode, type: string): boolean {
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && child.type === type) return true;
+    }
+    return false;
+  }
+
+  private isNodeExported(node: SyntaxNode, name: string): boolean {
+    // TypeScript / JavaScript: wrapped in export_statement
+    let current: SyntaxNode | null = node;
+    while (current) {
+      if (current.type === 'export_statement') return true;
+      current = current.parent;
+    }
+
+    // Rust: visibility_modifier child with 'pub'
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && child.type === 'visibility_modifier' && child.text === 'pub') return true;
+    }
+
+    // Java / C#: modifiers child containing public/protected
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (child && (child.type === 'modifiers' || child.type === 'modifier')) {
+        const text = child.text;
+        if (text === 'public' || text === 'protected') return true;
+      }
+    }
+
+    // Go: capitalized name
+    if (this.language === 'go' && name.length > 0 && name[0] === name[0].toUpperCase()) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private getEnclosingClassName(node: SyntaxNode): string | null {
+    const classTypes = [
+      'class_declaration', 'class_definition', 'struct_item', 'class_specifier',
+      'struct_specifier', 'enum_declaration', 'enum_item',
+    ];
+    const interfaceTypes = [
+      'interface_declaration', 'trait_item', 'interface_definition', 'interface_specifier',
+    ];
+    let current: SyntaxNode | null = node;
+    while (current) {
+      if (classTypes.includes(current.type) || interfaceTypes.includes(current.type)) {
+        for (let i = 0; i < current.childCount; i++) {
+          const child = current.child(i);
+          if (child && (child.type === 'identifier' || child.type === 'type_identifier')) {
+            return child.text;
+          }
+        }
+      }
+      current = current.parent;
+    }
+    return null;
   }
 }

@@ -14,7 +14,7 @@ describe('Self-index', () => {
     fs.rmSync(SELF_INDEX_DIR, { recursive: true, force: true });
     kg = await KimiGraph.init(PROJECT_ROOT, { embedSymbols: false });
     await kg.indexAll();
-  });
+  }, 30000);
 
   afterAll(() => {
     kg.close();

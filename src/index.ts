@@ -524,8 +524,12 @@ export class KimiGraph {
       } else if (entry.isFile()) {
         if (isExcludedPath(relPath, this.config.exclude)) continue;
 
-        const size = fs.statSync(path.join(fullDir, entry.name)).size;
-        if (size > this.config.maxFileSize) continue;
+        try {
+          const size = fs.statSync(path.join(fullDir, entry.name)).size;
+          if (size > this.config.maxFileSize) continue;
+        } catch {
+          continue; // File may have been deleted between readdir and stat
+        }
 
         if (this.detectLanguage(relPath)) {
           files.push(relPath);
