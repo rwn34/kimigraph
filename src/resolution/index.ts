@@ -67,6 +67,10 @@ export class ReferenceResolver {
         const result = this.resolveModule(ref, nodesByFile);
         targetId = result.targetId;
         strategy = result.strategy;
+      } else if (ref.refKind === 'ffi') {
+        const result = this.resolveFfi(ref, nodesByFile);
+        targetId = result.targetId;
+        strategy = result.strategy;
       } else {
         const result = this.resolveCall(ref, nodesByName, nodesByFile);
         targetId = result.targetId;
@@ -74,7 +78,9 @@ export class ReferenceResolver {
       }
 
       if (targetId) {
-        const edgeKind = ref.refKind === 'module' ? 'imports' : 'calls';
+        const edgeKind =
+          ref.refKind === 'module' ? 'imports' :
+          ref.refKind === 'ffi' ? 'ffi' : 'calls';
         this.queries.insertEdge({
           source: ref.sourceId,
           target: targetId,
@@ -139,6 +145,34 @@ export class ReferenceResolver {
     }
 
     return { targetId: null, strategy: 'no-file-node' };
+  }
+
+  private resolveFfi(
+    ref: UnresolvedRef,
+    nodesByFile: Map<string, Node[]>
+  ): { targetId: string | null; strategy: string } {
+    const ffiPath = ref.refName;
+
+    // Skip external modules
+    if (!ffiPath.startsWith('.') && !ffiPath.startsWith('/')) {
+      return { targetId: null, strategy: 'skip-external-ffi' };
+    }
+
+    // Resolve relative path to actual file on disk
+    const sourceDir = path.dirname(path.join(this.projectRoot, ref.filePath));
+    const candidate = path.join(sourceDir, ffiPath);
+
+    if (fs.existsSync(candidate)) {
+      const resolvedPath = path.relative(this.projectRoot, candidate).replace(/\\/g, '/');
+      const fileNodes = nodesByFile.get(resolvedPath);
+      const fileNode = fileNodes?.find((n) => n.kind === 'file');
+      if (fileNode) {
+        return { targetId: fileNode.id, strategy: 'ffi-to-file' };
+      }
+      return { targetId: null, strategy: 'ffi-file-not-indexed' };
+    }
+
+    return { targetId: null, strategy: 'ffi-file-not-found' };
   }
 
   private importMapCache = new Map<string, Map<string, string>>();

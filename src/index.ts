@@ -15,6 +15,7 @@ import {
   SearchOptions,
   SearchResult,
   Language,
+  detectLanguage,
 } from './types';
 import { DatabaseConnection, getDatabasePath } from './db';
 import { QueryBuilder } from './db/queries';
@@ -226,7 +227,7 @@ export class KimiGraph {
       for (let i = 0; i < files.length; i++) {
         const filePath = files[i];
         const source = readFileSafe(path.join(this.projectRoot, filePath));
-        if (!source) continue;
+        if (source === null) continue;
 
         const lang = this.detectLanguage(filePath);
         if (!lang) continue;
@@ -329,7 +330,7 @@ export class KimiGraph {
       // Check for new/modified files
       for (const filePath of currentFiles) {
         const source = readFileSafe(path.join(this.projectRoot, filePath));
-        if (!source) continue;
+        if (source === null) continue;
 
         const lang = this.detectLanguage(filePath);
         if (!lang) continue;
@@ -534,23 +535,7 @@ export class KimiGraph {
   }
 
   private detectLanguage(filePath: string): Language | null {
-    const ext = path.extname(filePath).toLowerCase();
-    for (const [lang, exts] of Object.entries({
-      typescript: ['.ts', '.tsx'],
-      javascript: ['.js', '.jsx', '.mjs', '.cjs'],
-      python: ['.py'],
-      go: ['.go'],
-      rust: ['.rs'],
-      java: ['.java'],
-      c: ['.c', '.h'],
-      cpp: ['.cpp', '.cc', '.cxx', '.hpp', '.hxx'],
-      csharp: ['.cs'],
-    })) {
-      if ((exts as string[]).includes(ext)) {
-        return lang as Language;
-      }
-    }
-    return null;
+    return detectLanguage(filePath);
   }
 
   private resolveReferences(): void {

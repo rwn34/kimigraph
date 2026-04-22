@@ -35,7 +35,8 @@ export type EdgeKind =
   | 'implements'
   | 'references'
   | 'returns'
-  | 'type_of';
+  | 'type_of'
+  | 'ffi';
 
 // ============================================================================
 // LANGUAGES
@@ -45,7 +46,7 @@ export type Language = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 
 
 export const LANGUAGE_EXTENSIONS: Record<Language, string[]> = {
   typescript: ['.ts', '.tsx'],
-  javascript: ['.js', '.jsx', '.mjs', '.cjs'],
+  javascript: ['.js', '.jsx', '.mjs', '.cjs', '.node', '.wasm'],
   python: ['.py'],
   go: ['.go'],
   rust: ['.rs'],

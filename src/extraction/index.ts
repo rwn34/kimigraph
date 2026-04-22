@@ -54,6 +54,28 @@ export async function extractFromSource(
     };
   }
 
+  // FFI binaries — create file node only, no parsing
+  const lowerPath = filePath.toLowerCase();
+  if (lowerPath.endsWith('.node') || lowerPath.endsWith('.wasm')) {
+    const fileNodeId = `file:${filePath}`;
+    const fileNode: Node = {
+      id: fileNodeId,
+      kind: 'file',
+      name: path.basename(filePath),
+      filePath,
+      startLine: 1,
+      endLine: 1,
+      language: 'javascript',
+      updatedAt: Date.now(),
+    };
+    return {
+      nodes: [fileNode],
+      edges: [],
+      unresolvedRefs: [],
+      errors: [],
+    };
+  }
+
   try {
     const grammar = await loadGrammar(lang);
     const parser = new Parser();
@@ -439,10 +461,12 @@ class Extractor {
     };
     this.addNode(node);
     this.addEdge(this.fileNodeId, id, 'contains');
+    // Detect FFI imports (WASM, Node-API binaries)
+    const isFfi = source.endsWith('.node') || source.endsWith('.wasm');
     this.unresolvedRefs.push({
       sourceId: this.fileNodeId,
       refName: source,
-      refKind: 'module',
+      refKind: isFfi ? 'ffi' : 'module',
       filePath: this.filePath,
       line: stmtNode.startPosition.row + 1,
       column: stmtNode.startPosition.column,
@@ -474,6 +498,25 @@ class Extractor {
     const targetName = methodNode?.text ?? fnNode?.text ?? 'unknown';
     const line = callNode.startPosition.row + 1;
     const col = callNode.startPosition.column;
+
+    // Detect require('./addon.node') and require('./module.wasm')
+    if (targetName === 'require') {
+      const match = callNode.text.match(/require\s*\(\s*['"](.+?)['"]\s*\)/);
+      if (match) {
+        const argText = match[1];
+        if (argText.endsWith('.node') || argText.endsWith('.wasm')) {
+          this.unresolvedRefs.push({
+            sourceId: this.fileNodeId,
+            refName: argText,
+            refKind: 'ffi',
+            filePath: this.filePath,
+            line,
+            column: col,
+          });
+          return;
+        }
+      }
+    }
 
     // Find the nearest containing function/method/class as source
     let sourceId = this.fileNodeId;

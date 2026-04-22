@@ -278,7 +278,7 @@ export class QueryBuilder {
       const rows = this.db.all<{ source: string }>(
         `SELECT DISTINCT source FROM edges
          WHERE target IN (${placeholders})
-         AND kind IN ('calls', 'imports', 'references')`,
+         AND kind IN ('calls', 'imports', 'references', 'extends', 'ffi')`,
         frontier
       );
       frontier = [];
