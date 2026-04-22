@@ -123,6 +123,27 @@ export const tools: ToolDefinition[] = [
     },
   },
   {
+    name: 'kimigraph_dead_code',
+    description: 'Find potentially dead code — unexported functions, methods, and classes that are never called or referenced.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        limit: { type: 'number', description: 'Max results 1-100 (default: 20)', default: 20 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
+    name: 'kimigraph_cycles',
+    description: 'Find circular dependencies in the import graph. Returns import cycles as lists of file paths.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+    },
+  },
+  {
     name: 'kimigraph_explore',
     description: 'PRIMARY EXPLORATION TOOL: Answer broad codebase questions by returning full source sections for all relevant symbols in ONE call. Use this INSTEAD of reading individual files when exploring architecture, tracing flows, or understanding how a feature works. Returns complete code snippets with file paths and line ranges.',
     inputSchema: {
@@ -293,6 +314,23 @@ export class ToolHandler {
           langLine ? `  By language: ${langLine}` : '',
           `  DB size: ${dbMb} MB`,
         ].filter(Boolean).join('\n');
+      }
+
+      case 'kimigraph_dead_code': {
+        const limit = clampLimit(args.limit as number | undefined, 20);
+        const dead = kg.findDeadCode(limit);
+        if (dead.length === 0) return 'No dead code found. All symbols are either exported or referenced.';
+        return `Potentially dead code (${dead.length} symbols):\n` + dead.map((n) =>
+          `- ${mapKind(n.kind)} \`${n.name}\` — ${n.filePath}:${n.startLine}`
+        ).join('\n');
+      }
+
+      case 'kimigraph_cycles': {
+        const cycles = kg.findCircularDependencies();
+        if (cycles.length === 0) return 'No circular dependencies found.';
+        return `Found ${cycles.length} import cycle(s):\n\n` + cycles.map((cycle, i) =>
+          `Cycle ${i + 1}:\n` + cycle.map((f) => `  → ${f}`).join('\n')
+        ).join('\n\n');
       }
 
       case 'kimigraph_explore': {

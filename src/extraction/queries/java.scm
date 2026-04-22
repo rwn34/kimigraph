@@ -30,8 +30,16 @@
 ; ============================================================================
 
 (enum_declaration
-  name: (identifier) @class.name
-) @class.definition
+  name: (identifier) @enum.name
+) @enum.definition
+
+(enum_declaration
+  body: (enum_body
+    (enum_constant
+      name: (identifier) @enum_member.name
+    ) @enum_member.definition
+  )
+)
 
 ; ============================================================================
 ; METHOD CALLS
@@ -53,6 +61,42 @@
 ; ============================================================================
 
 (lambda_expression) @anonymous.definition
+
+; ============================================================================
+; INHERITANCE
+; ============================================================================
+
+(class_declaration
+  (superclass
+    (_) @extends.name
+  )
+) @extends.definition
+
+(class_declaration
+  (super_interfaces
+    (type_list
+      (type_identifier) @implements.name
+    )
+  )
+) @implements.definition
+
+(interface_declaration
+  (extends_interfaces
+    (type_list
+      (type_identifier) @extends.name
+    )
+  )
+) @extends.definition
+
+; ============================================================================
+; FIELDS
+; ============================================================================
+
+(field_declaration
+  declarator: (variable_declarator
+    name: (identifier) @property.name
+  )
+) @property.definition
 
 ; ============================================================================
 ; IMPORTS

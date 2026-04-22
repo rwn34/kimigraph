@@ -80,6 +80,8 @@ For ANY broad codebase question, your **very first tool call MUST be \`kimigraph
 | \`Grep\` for finding functions | \`kimigraph_search\` |
 | \`Glob\` for listing files | \`kimigraph_status\` |
 | \`ReadFile\` to understand call chains | \`kimigraph_callers\` / \`kimigraph_callees\` |
+| Finding unused code | \`kimigraph_dead_code\` |
+| Checking for circular imports | \`kimigraph_cycles\` |
 | Reading multiple files to trace impact | \`kimigraph_impact\` |
 | \`ReadFile\` for a single symbol's code | \`kimigraph_node\` with \`includeCode: true\` |
 
@@ -113,7 +115,7 @@ This project uses KimiGraph for code intelligence.
 
 The graph contains pre-indexed symbols, calls, and imports. It returns full source sections in one call, replacing the need for file-by-file exploration.
 
-Available tools: \`kimigraph_search\`, \`kimigraph_context\`, \`kimigraph_explore\`, \`kimigraph_callers\`, \`kimigraph_callees\`, \`kimigraph_impact\`, \`kimigraph_node\`, \`kimigraph_status\`.
+Available tools: \`kimigraph_search\`, \`kimigraph_context\`, \`kimigraph_explore\`, \`kimigraph_callers\`, \`kimigraph_callees\`, \`kimigraph_impact\`, \`kimigraph_node\`, \`kimigraph_status\`, \`kimigraph_dead_code\`, \`kimigraph_cycles\`.
 `;
 
 export function writeAgentInstructions(projectRoot: string): void {

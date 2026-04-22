@@ -86,6 +86,28 @@
 ; Comments
 (comment) @comment.definition
 
+; Inheritance
+(class_declaration
+  (class_heritage
+    (extends_clause
+      (_) @extends.name
+    )
+  )
+) @extends.definition
+
+(class_declaration
+  (class_heritage
+    (implements_clause
+      (_) @implements.name
+    )
+  )
+) @implements.definition
+
+; Properties
+(public_field_definition
+  name: (property_identifier) @property.name
+) @property.definition
+
 ; Anonymous functions
 (arrow_function) @anonymous.definition
 (function_expression) @anonymous.definition

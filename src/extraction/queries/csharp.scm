@@ -20,9 +20,13 @@
 (struct_declaration
   (identifier) @class.name) @class.definition
 
-; Enums (mapped to class)
+; Enums
 (enum_declaration
-  (identifier) @class.name) @class.definition
+  (identifier) @enum.name) @enum.definition
+
+(enum_member_declaration
+  (identifier) @enum_member.name
+) @enum_member.definition
 
 ; Method invocations
 (invocation_expression
@@ -38,6 +42,32 @@
 ; Anonymous functions
 (lambda_expression) @anonymous.definition
 (anonymous_method_expression) @anonymous.definition
+
+; Inheritance
+(class_declaration
+  (base_list
+    (_) @extends.name
+  )
+) @extends.definition
+
+(interface_declaration
+  (base_list
+    (_) @extends.name
+  )
+) @extends.definition
+
+; Properties
+(property_declaration
+  name: (identifier) @property.name
+) @property.definition
+
+(field_declaration
+  (variable_declaration
+    (variable_declarator
+      (identifier) @property.name
+    )
+  )
+) @property.definition
 
 ; Using directives
 (using_directive

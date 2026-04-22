@@ -27,6 +27,8 @@ For ANY broad codebase question, your **very first tool call MUST be `kimigraph_
 | `Grep` for finding functions | `kimigraph_search` |
 | `Glob` for listing files | `kimigraph_status` |
 | `ReadFile` to understand call chains | `kimigraph_callers` / `kimigraph_callees` |
+| Finding unused code | `kimigraph_dead_code` |
+| Checking for circular imports | `kimigraph_cycles` |
 | Reading multiple files to trace impact | `kimigraph_impact` |
 | `ReadFile` for a single symbol's code | `kimigraph_node` with `includeCode: true` |
 
