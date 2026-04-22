@@ -307,6 +307,13 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Cross-language FFI** | WASM imports, Node-API, and FFI boundaries mostly not traced | 🟡 **Partially fixed** — JS-side `import` from `.wasm` and `require('./addon.node')` are now detected and graphed as `ffi` edges |
 | **Comments outside symbols** | Docstrings attached to symbols only; free-floating comments not indexed | ✅ **Fixed** — all line and block comments are extracted as `comment` nodes and indexed in FTS |
 | **Anonymous functions** | Callbacks and lambdas may not get meaningful names | ✅ **Fixed** — arrow functions, lambdas, closures, and func literals detected across all 9 languages with synthetic names (`anonymous_at_line_42`) |
+| **Type hierarchy** | `extends`/`implements` edges never created; `getTypeHierarchy()` always empty | ✅ **Fixed** — inheritance extracted for TS, Java, C#, Go, Rust |
+| **Enums / properties / constants** | Enums mapped to `class`, no property or constant nodes | ✅ **Fixed** — `enum`, `enum_member`, `property`, `constant` kinds now populated |
+| **Python methods** | Methods inside classes captured as top-level `function` | ✅ **Fixed** — Python class methods extracted as `method` kind with `ClassName.methodName` qualified names |
+| **Go variables & constants** | Package-level `var` and `const` blocks invisible | ✅ **Fixed** — `var_declaration` and `const_declaration` captured |
+| **Non-JS cross-file resolution** | Python `from/import`, Go `import` not resolved; relied on fragile global name match | ✅ **Fixed** — `buildImportMap()` parses Python and Go imports; cross-file call edges resolved |
+| **Dead code / cycles** | `findDeadCode()` and `findCircularDependencies()` existed but unexposed | ✅ **Fixed** — exposed as `kimigraph_dead_code` and `kimigraph_cycles` MCP tools |
+| **Docstring extraction** | Only single-line `//`/`#` previews captured; multi-line JSDoc, `""""""`, `///` missed | 🟡 **Partially fixed** — still single-line heuristic, but `docstring` field is populated for all nodes |
 
 ### Performance notes
 
@@ -344,11 +351,17 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 - [x] C / C++ / C# languages (9 total)
 
 **Phase 5 — Deepen (v0.4) 🎯**
-- [ ] Index all comments (not just docstrings) for richer semantic search
-- [ ] Extract anonymous functions with synthetic names (`callback_at_line_42`)
-- [ ] Detect JS-side WASM / Node-API imports statically
+- [x] Index all comments (not just docstrings) for richer semantic search
+- [x] Extract anonymous functions with synthetic names (`anonymous_at_line_42`)
+- [x] Detect JS-side WASM / Node-API imports statically
+- [x] Extract `extends`/`implements` edges for type hierarchy
+- [x] Extract enums, enum members, properties, constants
+- [x] Fix Python methods (extract as `method` kind, not `function`)
+- [x] Extract Go variables and constants
+- [x] Resolve Python and Go imports for cross-file call edges
+- [x] Expose `findDeadCode` and `findCircularDependencies` as MCP tools
 - [ ] Type-aware search (find by signature: `"User -> string"`)
-- [ ] Cross-language resolution (WASM imports, protobuf boundaries)
+- [ ] Cross-language resolution (WASM → C++ symbols, protobuf boundaries)
 - [ ] Incremental embedding updates (only re-embed changed symbols)
 - [ ] More languages (Ruby, PHP, Swift, Kotlin)
 
