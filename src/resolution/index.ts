@@ -192,6 +192,23 @@ export class ReferenceResolver {
       return map;
     }
 
+    const ext = path.extname(filePath).toLowerCase();
+
+    if (ext === '.ts' || ext === '.tsx' || ext === '.js' || ext === '.jsx' || ext === '.mjs' || ext === '.cjs') {
+      this.parseJsImports(source, map);
+    } else if (ext === '.py') {
+      this.parsePythonImports(source, map);
+    } else if (ext === '.go') {
+      this.parseGoImports(source, map);
+    }
+    // Java/Rust/C# imports are namespace/path-based and require
+    // project-structure aware resolution; fall back to global unique match
+
+    this.importMapCache.set(filePath, map);
+    return map;
+  }
+
+  private parseJsImports(source: string, map: Map<string, string>): void {
     // Named imports: import { foo, bar } from './module'
     const namedImportRegex = /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]([^'"]+)['"]/g;
     let m: RegExpExecArray | null;
@@ -214,9 +231,51 @@ export class ReferenceResolver {
     while ((m = namespaceImportRegex.exec(source)) !== null) {
       map.set(m[1], m[2]);
     }
+  }
 
-    this.importMapCache.set(filePath, map);
-    return map;
+  private parsePythonImports(source: string, map: Map<string, string>): void {
+    // from module import name1, name2
+    const fromImportRegex = /^from\s+([\w.]+)\s+import\s+([^#\n]+)/gm;
+    let m: RegExpExecArray | null;
+    while ((m = fromImportRegex.exec(source)) !== null) {
+      const modulePath = m[1].replace(/\./g, '/');
+      const names = m[2].split(',').map((s) => s.trim().split(/\s+as\s+/).pop()!.trim());
+      for (const n of names) {
+        if (n && n !== '*') map.set(n, modulePath);
+      }
+    }
+
+    // import module (map last segment to module path)
+    const importRegex = /^import\s+([\w.]+)(?:\s+as\s+(\w+))?/gm;
+    while ((m = importRegex.exec(source)) !== null) {
+      const modulePath = m[1].replace(/\./g, '/');
+      const alias = m[2];
+      const lastSegment = alias ?? modulePath.split('/').pop()!;
+      map.set(lastSegment, modulePath);
+    }
+  }
+
+  private parseGoImports(source: string, map: Map<string, string>): void {
+    // import "path"
+    const plainImportRegex = /import\s+["']([^"']+)["']/g;
+    let m: RegExpExecArray | null;
+    while ((m = plainImportRegex.exec(source)) !== null) {
+      const importPath = m[1];
+      if (importPath.startsWith('.')) {
+        const lastSegment = path.basename(importPath);
+        map.set(lastSegment, importPath);
+      }
+    }
+
+    // import alias "path"
+    const aliasImportRegex = /import\s+(\w+)\s+["']([^"']+)["']/g;
+    while ((m = aliasImportRegex.exec(source)) !== null) {
+      const alias = m[1];
+      const importPath = m[2];
+      if (importPath.startsWith('.')) {
+        map.set(alias, importPath);
+      }
+    }
   }
 
   private resolveModuleToFile(moduleSource: string, fromFile: string): string | null {
@@ -224,17 +283,34 @@ export class ReferenceResolver {
       return null; // external module
     }
     const sourceDir = path.dirname(path.join(this.projectRoot, fromFile));
-    const candidates = [
-      path.join(sourceDir, moduleSource),
-      path.join(sourceDir, moduleSource + '.ts'),
-      path.join(sourceDir, moduleSource + '.tsx'),
-      path.join(sourceDir, moduleSource + '.js'),
-      path.join(sourceDir, moduleSource + '.jsx'),
-      path.join(sourceDir, moduleSource, 'index.ts'),
-      path.join(sourceDir, moduleSource, 'index.tsx'),
-      path.join(sourceDir, moduleSource, 'index.js'),
-      path.join(sourceDir, moduleSource, 'index.jsx'),
-    ];
+    const ext = path.extname(fromFile).toLowerCase();
+
+    // Language-specific extension candidates
+    const extCandidates: string[] = [];
+    if (ext === '.py') {
+      extCandidates.push('.py');
+    } else if (ext === '.go') {
+      extCandidates.push('.go');
+    } else {
+      // JS/TS
+      extCandidates.push('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs');
+    }
+
+    const candidates: string[] = [path.join(sourceDir, moduleSource)];
+    for (const e of extCandidates) {
+      candidates.push(path.join(sourceDir, moduleSource + e));
+    }
+    // Index files for JS/TS
+    if (ext !== '.py' && ext !== '.go') {
+      for (const e of ['.ts', '.tsx', '.js', '.jsx']) {
+        candidates.push(path.join(sourceDir, moduleSource, 'index' + e));
+      }
+    }
+    // Python package __init__.py
+    if (ext === '.py') {
+      candidates.push(path.join(sourceDir, moduleSource, '__init__.py'));
+    }
+
     for (const candidate of candidates) {
       if (fs.existsSync(candidate)) {
         return path.relative(this.projectRoot, candidate).replace(/\\/g, '/');

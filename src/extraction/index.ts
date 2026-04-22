@@ -177,27 +177,36 @@ class Extractor {
       }
     }
 
-    // Assign each 'other' capture to its innermost containing definition.
+    // Group by unique definition node, merging all capture names for the same node.
+    // This handles cases where a single syntax node matches multiple definition
+    // patterns (e.g., a class_declaration captured as both class.definition and
+    // implements.definition).
+    const nodeDefMap = new Map<number, Map<string, SyntaxNode[]>>();
+
+    for (const def of defs) {
+      if (!nodeDefMap.has(def.node.id)) {
+        nodeDefMap.set(def.node.id, new Map());
+      }
+      const group = nodeDefMap.get(def.node.id)!;
+      if (!group.has(def.name)) group.set(def.name, []);
+      group.get(def.name)!.push(def.node);
+    }
+
+    // Assign each 'other' capture to its innermost containing definition node.
     // This ensures calls inside anonymous functions are attributed to the
     // anonymous function, not the outer named function.
-    const groups = new Map<number, Map<string, SyntaxNode[]>>();
-
     for (const other of others) {
-      let innermostIdx = -1;
-      for (let i = 0; i < defs.length; i++) {
-        const def = defs[i];
+      let innermostDefNode: SyntaxNode | null = null;
+      for (const def of defs) {
         if (other.node.id === def.node.id || this.isDescendant(other.node, def.node)) {
-          if (innermostIdx === -1 || this.isDescendant(def.node, defs[innermostIdx].node)) {
-            innermostIdx = i;
+          if (!innermostDefNode || (def.node.id !== innermostDefNode.id && this.isDescendant(def.node, innermostDefNode))) {
+            innermostDefNode = def.node;
           }
         }
       }
 
-      if (innermostIdx >= 0) {
-        if (!groups.has(innermostIdx)) {
-          groups.set(innermostIdx, new Map());
-        }
-        const group = groups.get(innermostIdx)!;
+      if (innermostDefNode) {
+        const group = nodeDefMap.get(innermostDefNode.id)!;
         if (!group.has(other.name)) group.set(other.name, []);
         group.get(other.name)!.push(other.node);
       } else {
@@ -205,10 +214,8 @@ class Extractor {
       }
     }
 
-    // Process each definition with its assigned group
-    for (let i = 0; i < defs.length; i++) {
-      const group = groups.get(i) ?? new Map();
-      group.set(defs[i].name, [defs[i].node]);
+    // Process each unique definition node group
+    for (const group of nodeDefMap.values()) {
       this.processGroup(group);
     }
   }
@@ -240,8 +247,8 @@ class Extractor {
   }
 
   private processGroup(group: Map<string, SyntaxNode[]>): void {
-    // Function declarations
-    if (group.has('function.definition')) {
+    // Function declarations (skip if also a method — method takes precedence)
+    if (group.has('function.definition') && !group.has('method.definition')) {
       const defNode = group.get('function.definition')![0];
       const nameNode = group.get('function.name')?.[0];
       if (nameNode) {
@@ -329,6 +336,66 @@ class Extractor {
       const anonNodes = group.get('anonymous.definition') ?? [];
       for (const anonNode of anonNodes) {
         this.addAnonymousFunction(anonNode);
+      }
+    }
+
+    // Extends edges
+    if (group.has('extends.definition')) {
+      const defNode = group.get('extends.definition')![0];
+      const parentNodes = group.get('extends.name') ?? [];
+      for (const parentNode of parentNodes) {
+        this.addInheritanceEdge(defNode, parentNode, 'extends');
+      }
+    }
+
+    // Implements edges
+    if (group.has('implements.definition')) {
+      const defNode = group.get('implements.definition')![0];
+      const interfaceNodes = group.get('implements.name') ?? [];
+      for (const ifaceNode of interfaceNodes) {
+        this.addInheritanceEdge(defNode, ifaceNode, 'implements');
+      }
+    }
+
+    // Enum definitions
+    if (group.has('enum.definition')) {
+      const defNode = group.get('enum.definition')![0];
+      const nameNode = group.get('enum.name')?.[0];
+      if (nameNode) {
+        this.addEnum(nameNode, defNode);
+      }
+    }
+
+    // Enum member definitions
+    if (group.has('enum_member.definition')) {
+      const memberNodes = group.get('enum_member.definition') ?? [];
+      const nameNodes = group.get('enum_member.name') ?? [];
+      for (let i = 0; i < memberNodes.length; i++) {
+        if (nameNodes[i]) {
+          this.addEnumMember(nameNodes[i], memberNodes[i]);
+        }
+      }
+    }
+
+    // Property definitions
+    if (group.has('property.definition')) {
+      const propNodes = group.get('property.definition') ?? [];
+      const nameNodes = group.get('property.name') ?? [];
+      for (let i = 0; i < propNodes.length; i++) {
+        if (nameNodes[i]) {
+          this.addProperty(nameNodes[i], propNodes[i]);
+        }
+      }
+    }
+
+    // Constant definitions
+    if (group.has('constant.definition')) {
+      const constNodes = group.get('constant.definition') ?? [];
+      const nameNodes = group.get('constant.name') ?? [];
+      for (let i = 0; i < constNodes.length; i++) {
+        if (nameNodes[i]) {
+          this.addConstant(nameNodes[i], constNodes[i]);
+        }
       }
     }
 
@@ -573,6 +640,108 @@ class Extractor {
     };
     this.addNode(node);
     this.addEdge(this.fileNodeId, id, 'contains');
+  }
+
+  private addEnum(nameNode: SyntaxNode, defNode: SyntaxNode): void {
+    const name = nameNode.text;
+    const id = this.makeId('enum', name, nameNode.startPosition.row + 1);
+    const node: Node = {
+      id,
+      kind: 'enum',
+      name,
+      filePath: this.filePath,
+      startLine: defNode.startPosition.row + 1,
+      endLine: defNode.endPosition.row + 1,
+      startColumn: defNode.startPosition.column,
+      endColumn: defNode.endPosition.column,
+      language: this.language,
+      isExported: this.isNodeExported(defNode, name),
+      updatedAt: Date.now(),
+    };
+    this.addNode(node);
+    this.addEdge(this.fileNodeId, id, 'contains');
+  }
+
+  private addEnumMember(nameNode: SyntaxNode, defNode: SyntaxNode): void {
+    const name = nameNode.text;
+    const id = this.makeId('enum_member', name, nameNode.startPosition.row + 1);
+    const node: Node = {
+      id,
+      kind: 'enum_member',
+      name,
+      filePath: this.filePath,
+      startLine: defNode.startPosition.row + 1,
+      endLine: defNode.endPosition.row + 1,
+      startColumn: defNode.startPosition.column,
+      endColumn: defNode.endPosition.column,
+      language: this.language,
+      updatedAt: Date.now(),
+    };
+    this.addNode(node);
+    this.addEdge(this.fileNodeId, id, 'contains');
+  }
+
+  private addProperty(nameNode: SyntaxNode, defNode: SyntaxNode): void {
+    const name = nameNode.text;
+    const id = this.makeId('property', name, nameNode.startPosition.row + 1);
+    const node: Node = {
+      id,
+      kind: 'property',
+      name,
+      filePath: this.filePath,
+      startLine: defNode.startPosition.row + 1,
+      endLine: defNode.endPosition.row + 1,
+      startColumn: defNode.startPosition.column,
+      endColumn: defNode.endPosition.column,
+      language: this.language,
+      isExported: this.isNodeExported(defNode, name),
+      updatedAt: Date.now(),
+    };
+    this.addNode(node);
+    this.addEdge(this.fileNodeId, id, 'contains');
+  }
+
+  private addConstant(nameNode: SyntaxNode, defNode: SyntaxNode): void {
+    const name = nameNode.text;
+    const id = this.makeId('constant', name, nameNode.startPosition.row + 1);
+    const node: Node = {
+      id,
+      kind: 'constant',
+      name,
+      filePath: this.filePath,
+      startLine: defNode.startPosition.row + 1,
+      endLine: defNode.endPosition.row + 1,
+      startColumn: defNode.startPosition.column,
+      endColumn: defNode.endPosition.column,
+      language: this.language,
+      isExported: this.isNodeExported(defNode, name),
+      updatedAt: Date.now(),
+    };
+    this.addNode(node);
+    this.addEdge(this.fileNodeId, id, 'contains');
+  }
+
+  private addInheritanceEdge(defNode: SyntaxNode, parentNode: SyntaxNode, kind: EdgeKind): void {
+    // Find the class/interface node that corresponds to defNode
+    let sourceId: string | null = null;
+    for (const [id, node] of this.nodeMap) {
+      if (node.startLine === defNode.startPosition.row + 1 &&
+          node.startColumn === defNode.startPosition.column) {
+        sourceId = id;
+        break;
+      }
+    }
+    if (!sourceId) return;
+
+    // Find target by name (best effort)
+    const targetName = parentNode.text;
+    for (const [id, node] of this.nodeMap) {
+      if ((node.kind === 'class' || node.kind === 'interface' || node.kind === 'enum') &&
+          node.name === targetName) {
+        this.addEdge(sourceId, id, kind);
+        return;
+      }
+    }
   }
 
   private addCall(

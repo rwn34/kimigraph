@@ -12,6 +12,15 @@
   name: (identifier) @class.name
 ) @class.definition
 
+; Methods inside classes
+(class_definition
+  body: (block
+    (function_definition
+      name: (identifier) @method.name
+    ) @method.definition
+  )
+)
+
 ; Import statements
 (import_statement
   (dotted_name) @import.name

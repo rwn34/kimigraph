@@ -61,6 +61,32 @@
 (func_literal) @anonymous.definition
 
 ; ============================================================================
+; INTERFACE EMBEDDING
+; ============================================================================
+
+(interface_type
+  (constraint_elem
+    (_) @implements.name
+  )
+) @implements.definition
+
+; ============================================================================
+; VARIABLES AND CONSTANTS
+; ============================================================================
+
+(var_declaration
+  (var_spec
+    name: (identifier) @variable.name
+  )
+) @variable.declaration
+
+(const_declaration
+  (const_spec
+    name: (identifier) @constant.name
+  )
+) @constant.definition
+
+; ============================================================================
 ; IMPORTS
 ; ============================================================================
 

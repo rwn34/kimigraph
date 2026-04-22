@@ -30,8 +30,12 @@
 ; ============================================================================
 
 (enum_item
-  name: (type_identifier) @class.name
-) @class.definition
+  name: (type_identifier) @enum.name
+) @enum.definition
+
+(enum_variant
+  name: (identifier) @enum_member.name
+) @enum_member.definition
 
 ; ============================================================================
 ; IMPL BLOCKS (treated as class definitions for the type)
@@ -69,6 +73,23 @@
 ; ============================================================================
 
 (closure_expression) @anonymous.definition
+
+; ============================================================================
+; TRAIT IMPLEMENTATIONS
+; ============================================================================
+
+(impl_item
+  trait: (type_identifier) @implements.name
+  type: (type_identifier) @implements.target
+) @implements.definition
+
+; ============================================================================
+; CONSTANTS
+; ============================================================================
+
+(const_item
+  name: (identifier) @constant.name
+) @constant.definition
 
 ; ============================================================================
 ; IMPORTS
