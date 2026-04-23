@@ -156,9 +156,10 @@ export class QueryBuilder {
 
     const where = conditions.length > 0 ? `AND ${conditions.join(' AND ')}` : '';
 
-    // FTS5 MATCH doesn't support parameter binding for the query itself
+    // Use parameter binding for the MATCH query
+    params.unshift(ftsQuery);
     const sql = `SELECT * FROM nodes
-      WHERE id IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH '${ftsQuery}')
+      WHERE rowid IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?)
       ${where}
       LIMIT ${safeLimit}`;
 
@@ -204,6 +205,19 @@ export class QueryBuilder {
       // node_embeddings may not exist in old schemas
     }
     this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
+  }
+
+  deleteNodesAndEdgesByFile(filePath: string): void {
+    const ids = this.db.all<{ id: string }>('SELECT id FROM nodes WHERE file_path = ?', [filePath]);
+    if (ids.length === 0) return;
+    const placeholders = ids.map(() => '?').join(',');
+    // Only delete outgoing edges from this file; preserve incoming cross-file edges
+    this.db.run(`DELETE FROM edges WHERE source IN (${placeholders})`, ids.map((r) => r.id));
+    this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
+  }
+
+  pruneDanglingEdges(): void {
+    this.db.run(`DELETE FROM edges WHERE source NOT IN (SELECT id FROM nodes) OR target NOT IN (SELECT id FROM nodes)`);
   }
 
   // ==========================================================================
@@ -278,7 +292,7 @@ export class QueryBuilder {
       const rows = this.db.all<{ source: string }>(
         `SELECT DISTINCT source FROM edges
          WHERE target IN (${placeholders})
-         AND kind IN ('calls', 'imports', 'references', 'extends', 'ffi')`,
+         AND kind IN ('calls', 'imports', 'extends', 'ffi')`,
         frontier
       );
       frontier = [];
@@ -398,7 +412,7 @@ export class QueryBuilder {
       `SELECT * FROM nodes
        WHERE kind IN ('function', 'method', 'class')
        AND is_exported = 0
-       AND id NOT IN (SELECT DISTINCT target FROM edges WHERE kind IN ('calls', 'references'))
+       AND id NOT IN (SELECT DISTINCT target FROM edges WHERE kind IN ('calls', 'extends', 'implements', 'imports'))
        LIMIT ?`,
       [limit]
     );
@@ -425,14 +439,23 @@ export class QueryBuilder {
     }
 
     const cycles: string[][] = [];
-    const visited = new Set<string>();
 
     for (const start of adj.keys()) {
-      if (visited.has(start)) continue;
-      this.dfsCycles(start, adj, new Set(), [], cycles, visited);
+      this.dfsCycles(start, adj, new Set(), [], cycles, 0);
     }
 
-    return cycles;
+    // Deduplicate cycles (same set of files in different order)
+    const seen = new Set<string>();
+    const unique: string[][] = [];
+    for (const c of cycles) {
+      const key = [...c].sort().join('|');
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(c);
+      }
+    }
+
+    return unique;
   }
 
   private dfsCycles(
@@ -441,21 +464,20 @@ export class QueryBuilder {
     pathSet: Set<string>,
     pathArr: string[],
     cycles: string[][],
-    visited: Set<string>
+    depth: number
   ): void {
+    if (depth > 50) return;
     if (pathSet.has(node)) {
       const startIdx = pathArr.indexOf(node);
-      cycles.push([...pathArr.slice(startIdx), node]);
+      cycles.push([...pathArr.slice(startIdx)]);
       return;
     }
-    if (visited.has(node)) return;
 
-    visited.add(node);
     pathSet.add(node);
     pathArr.push(node);
 
     for (const neighbor of adj.get(node) ?? []) {
-      this.dfsCycles(neighbor, adj, pathSet, pathArr, cycles, visited);
+      this.dfsCycles(neighbor, adj, pathSet, pathArr, cycles, depth + 1);
     }
 
     pathArr.pop();

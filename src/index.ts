@@ -144,7 +144,7 @@ export class KimiGraph {
     this.watcher = new GraphWatcher(
       this.projectRoot,
       async () => { await this.sync(); },
-      { debounceMs: opts?.debounceMs }
+      { debounceMs: opts?.debounceMs, excludePatterns: this.config.exclude }
     );
     this.watcher.start();
   }
@@ -188,42 +188,7 @@ export class KimiGraph {
       let filesSkipped = 0;
       let filesErrored = 0;
 
-      // Process in batches of 100
-      const batchSize = 100;
-      for (let i = 0; i < files.length; i += batchSize) {
-        const batch = files.slice(i, i + batchSize);
-
-        this.db.transaction(() => {
-          for (const filePath of batch) {
-            const source = readFileSafe(path.join(this.projectRoot, filePath));
-            if (source === null) {
-              filesErrored++;
-              errors.push({ filePath, message: 'Could not read file' });
-              continue;
-            }
-
-            const lang = this.detectLanguage(filePath);
-            if (!lang) {
-              filesSkipped++;
-              continue;
-            }
-
-            // Remove existing data for this file
-            this.queries.deleteNodesByFile(filePath);
-
-            try {
-              extractFromSource(filePath, source, lang).catch(() => {});
-            } catch (err) {
-              filesErrored++;
-              errors.push({ filePath, message: String(err) });
-            }
-          }
-        });
-
-        onProgress?.({ phase: 'scanning', current: Math.min(i + batchSize, files.length), total: files.length });
-      }
-
-      // Actually extract (async) and write
+      // Extract and write in a single pass
       for (let i = 0; i < files.length; i++) {
         const filePath = files[i];
         const source = readFileSafe(path.join(this.projectRoot, filePath));
@@ -358,8 +323,11 @@ export class KimiGraph {
           filesAdded++;
           nodesUpdated += result.nodes.length;
         } else if (existing.contentHash !== hash) {
-          // Modified file
-          this.queries.deleteNodesByFile(filePath);
+          // Modified file — preserve embeddings for unchanged nodes
+          const oldNodes = this.queries.getNodesByFile(filePath);
+          const oldById = new Map(oldNodes.map((n) => [n.id, n]));
+
+          this.queries.deleteNodesAndEdgesByFile(filePath);
           this.queries.deleteUnresolvedRefsByFile(filePath);
 
           const result = await extractFromSource(filePath, source, lang);
@@ -377,12 +345,33 @@ export class KimiGraph {
               nodeCount: result.nodes.length,
             });
           });
+
+          // Delete embeddings only for removed or changed nodes
+          const staleNodeIds: string[] = [];
+          const newNodeIds = new Set(result.nodes.map((n) => n.id));
+          for (const id of oldById.keys()) {
+            if (!newNodeIds.has(id)) {
+              staleNodeIds.push(id); // removed
+            }
+          }
+          for (const node of result.nodes) {
+            const oldNode = oldById.get(node.id);
+            if (oldNode) {
+              const fingerprint = (n: typeof node) => `${n.name}|${n.qualifiedName ?? ''}|${n.signature ?? ''}|${n.docstring ?? ''}`;
+              if (fingerprint(node) !== fingerprint(oldNode)) {
+                staleNodeIds.push(node.id); // changed
+              }
+            }
+          }
+          this.queries.deleteEmbeddingsByNodeIds(staleNodeIds);
+
           filesModified++;
           nodesUpdated += result.nodes.length;
         }
       }
 
       this.resolveReferences();
+      this.queries.pruneDanglingEdges();
 
       // Generate embeddings for new/modified nodes
       if (this.config.embedSymbols && this.db.hasVecExtension()) {
@@ -408,39 +397,51 @@ export class KimiGraph {
 
   async searchNodes(query: string, opts?: SearchOptions): Promise<SearchResult[]> {
     const limit = opts?.limit ?? 10;
+    const results: SearchResult[] = [];
+    const seen = new Set<string>();
 
-    // Exact match
-    const exact = this.queries.findNodesByExactName(query, { ...opts, limit });
-    if (exact.length > 0) {
-      return exact.map((node) => ({ node, score: 1.0 }));
+    const addResults = (nodes: Node[], score: number) => {
+      for (const node of nodes) {
+        if (results.length >= limit) break;
+        if (!seen.has(node.id)) {
+          seen.add(node.id);
+          results.push({ node, score });
+        }
+      }
+    };
+
+    // Exact match (highest priority)
+    addResults(this.queries.findNodesByExactName(query, { ...opts, limit }), 1.0);
+
+    // FTS (medium priority)
+    if (results.length < limit) {
+      addResults(this.queries.searchNodesFTS(query, { ...opts, limit: limit - results.length }), 0.8);
     }
 
-    // FTS
-    const fts = this.queries.searchNodesFTS(query, { ...opts, limit });
-    if (fts.length > 0) {
-      return fts.map((node) => ({ node, score: 0.8 }));
-    }
-
-    // Semantic fallback
-    if (this.config.embedSymbols && this.db.hasVecExtension()) {
+    // Semantic search (complements FTS, not just a fallback)
+    if (results.length < limit && this.config.embedSymbols && this.db.hasVecExtension()) {
       try {
         const embedder = getEmbedder({ model: this.config.embeddingModel, batchSize: this.config.embeddingBatchSize });
         const queryEmbedding = await embedder.embedOne(query);
-        const semantic = this.queries.searchNodesSemantic(queryEmbedding, { ...opts, limit });
-        if (semantic.length > 0) {
-          return semantic.map(({ node, distance }) => ({
-            node,
-            score: Math.max(0, 1 / (1 + distance) - 0.05),
-          }));
+        const semantic = this.queries.searchNodesSemantic(queryEmbedding, { ...opts, limit: limit - results.length });
+        for (const { node, distance } of semantic) {
+          if (results.length >= limit) break;
+          if (!seen.has(node.id)) {
+            seen.add(node.id);
+            results.push({ node, score: Math.max(0, 1 / (1 + distance) - 0.05) });
+          }
         }
       } catch {
-        // Semantic search failed, fall through to LIKE
+        // Semantic search failed, fall through
       }
     }
 
-    // LIKE fallback
-    const like = this.queries.searchNodesLike(query, { ...opts, limit });
-    return like.map((node) => ({ node, score: 0.5 }));
+    // LIKE fallback (lowest priority)
+    if (results.length < limit) {
+      addResults(this.queries.searchNodesLike(query, { ...opts, limit: limit - results.length }), 0.5);
+    }
+
+    return results;
   }
 
   getCallers(nodeId: string, limit = 20): Node[] {
@@ -557,16 +558,15 @@ export class KimiGraph {
   }
 
   private async embedMissingNodes(): Promise<void> {
-    const nodes = this.queries.getAllNodes().filter((n) => {
-      if (!EMBEDDABLE_KINDS.has(n.kind)) return false;
-      const existing = this.db.get<{ c: number }>(
-        'SELECT COUNT(*) as c FROM node_embeddings WHERE node_id = ?',
-        [n.id]
-      );
-      return !existing || existing.c === 0;
-    });
-    if (nodes.length === 0) return;
-    await this.embedNodeBatch(nodes);
+    const allNodes = this.queries.getAllNodes().filter((n) => EMBEDDABLE_KINDS.has(n.kind));
+    if (allNodes.length === 0) return;
+
+    const embeddedRows = this.db.all<{ node_id: string }>('SELECT node_id FROM node_embeddings');
+    const embeddedSet = new Set(embeddedRows.map((r) => r.node_id));
+
+    const missing = allNodes.filter((n) => !embeddedSet.has(n.id));
+    if (missing.length === 0) return;
+    await this.embedNodeBatch(missing);
   }
 
   private async embedNodeBatch(nodes: Node[]): Promise<void> {

@@ -23,7 +23,7 @@ With KimiGraph:
 
 1. `kimigraph_explore` → returns full source sections for all relevant symbols in **one call**
 
-**Result: 77% fewer tool calls, answers in under 3 seconds.**
+**Result: fewer tool calls, answers in under 3 seconds.**
 
 ---
 
@@ -130,6 +130,7 @@ KimiGraph installs via npm. Native dependencies (`better-sqlite3`, `sqlite-vec`)
 | `kimigraph_callees` | What this symbol calls | "What does this depend on?" |
 | `kimigraph_impact` | What's affected by a change | "What breaks if I change this?" |
 | `kimigraph_node` | Get a single symbol's details + source | "Show me the implementation" |
+| `kimigraph_path` | Shortest path between two symbols | "How does A reach B?" |
 | `kimigraph_status` | Check index health and stats | "Is the graph up to date?" |
 
 ---
@@ -214,11 +215,13 @@ Impact radius of function validateToken (src/auth.ts:45):
 **Watcher** (`src/watcher/`)
 - `fs.watch` recursive file watcher (zero dependencies)
 - Debounced auto-sync (2s) after file changes
+- Falls back to polling mode (`dirty` flag) if `fs.watch` is unsupported
 - Syncs automatically before every MCP tool call if dirty
 
 **Resolution** (`src/resolution/`)
 - Matches unresolved calls to definitions
-- Same-file exact match → project-wide unique match → module-to-file
+- Same-file exact match → import-aware resolution → project-wide unique match → module-to-file
+- Cross-language: JS/TS, Python, Go, Java, Rust import parsing
 
 ---
 
@@ -312,6 +315,9 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Python methods** | Methods inside classes captured as top-level `function` | ✅ **Fixed** — Python class methods extracted as `method` kind with `ClassName.methodName` qualified names |
 | **Go variables & constants** | Package-level `var` and `const` blocks invisible | ✅ **Fixed** — `var_declaration` and `const_declaration` captured |
 | **Non-JS cross-file resolution** | Python `from/import`, Go `import` not resolved; relied on fragile global name match | ✅ **Fixed** — `buildImportMap()` parses Python, Go, Java, and Rust imports; cross-file call edges resolved |
+| **Incremental sync losing edges** | Modified files deleted all incoming cross-file edges, never regenerated | ✅ **Fixed** — sync only deletes outgoing edges; `pruneDanglingEdges()` cleans up stale edges post-resolve |
+| **FTS5 query broken** | `nodes.id` (TEXT) compared to `rowid` (INTEGER), so FTS never matched | ✅ **Fixed** — uses `rowid IN (SELECT rowid FROM nodes_fts ...)` |
+| **Semantic search unreachable** | Semantic path skipped if FTS found any result | ✅ **Fixed** — all search strategies (exact → FTS → semantic → LIKE) now merge results up to the budget cap |
 | **Dead code / cycles** | `findDeadCode()` and `findCircularDependencies()` existed but unexposed | ✅ **Fixed** — exposed as `kimigraph_dead_code` and `kimigraph_cycles` MCP tools |
 | **Docstring extraction** | Only single-line `//`/`#` previews captured; multi-line JSDoc, `""""""`, `///` missed | ✅ **Fixed** — `extractDocstring()` collects consecutive preceding line comments, parses `/** ... */` blocks, and extracts Python `"""..."""` docstrings from function/class bodies |
 | **C/C++ extraction** | C only captured functions/structs; C++ missed inheritance, struct fields, enum members | ✅ **Fixed** — C now extracts enum members and struct fields; C++ extracts class inheritance (`extends`) and fields |
@@ -321,7 +327,7 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 
 ### Performance notes
 
-- **Indexing:** 20-file repo ≈ 1-3s structural, ≈ 3-5s with embeddings (first run includes model download)
+- **Indexing:** 100-file repo ≈ 1.5–3s structural, ≈ 2.5–5s with embeddings (first run includes model download)
 - **Query:** All graph queries are sub-millisecond (SQLite in-memory + indexes)
 - **Memory:** Vectors stay in SQLite (vec0), not loaded into memory
 - **Disk:** ~1-5MB per 100 files for structural index; ~2-5MB additional for embeddings
@@ -372,7 +378,7 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 - [x] Expose `findPath` as `kimigraph_path` MCP tool
 - [ ] Type-aware search (find by signature: `"User -> string"`)
 - [ ] Cross-language resolution (WASM → C++ symbols, protobuf boundaries)
-- [ ] Incremental embedding updates (only re-embed changed symbols)
+- [x] Incremental embedding updates (only re-embed changed symbols)
 - [ ] More languages (Ruby, PHP, Swift, Kotlin)
 
 > See `PLAN.md` for detailed direction, decision log, and validation criteria.
@@ -385,10 +391,10 @@ Measured on 4 repos (TypeScript API, Go CLI, Rust library, and self):
 
 | Metric | Result |
 |--------|--------|
-| Avg tool-call reduction | **77%** |
-| Avg file reduction | **68%** |
-| Questions answered with 1 explore call | **100%** |
-| Indexing overhead with embeddings | **~3.5×** structural-only |
+| Avg query latency | **< 100ms** |
+| Embedding overhead vs structural | **~1.5×** (100 files, warmed model) |
+| Indexing with embeddings | **< 5s** for 100 files |
+| Test coverage | **103 tests** across 21 test files |
 
 Run yourself: `npm run benchmark`
 

@@ -7,7 +7,7 @@ import { KimiGraph, findNearestKimiGraphRoot } from '../index';
 import { StdioTransport, ErrorCodes, JsonRpcMessage } from './transport';
 import { tools, ToolHandler } from './tools';
 
-const SERVER_INFO = { name: 'kimigraph', version: process.env.KIMIGRAPH_VERSION || '0.1.0' };
+const SERVER_INFO = { name: 'kimigraph', version: process.env.KIMIGRAPH_VERSION || require('../../package.json').version };
 const PROTOCOL_VERSION = '2024-11-05';
 
 export class MCPServer {

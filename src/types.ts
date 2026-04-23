@@ -33,7 +33,6 @@ export type EdgeKind =
   | 'imports'
   | 'extends'
   | 'implements'
-  | 'references'
   | 'ffi';
 
 // ============================================================================

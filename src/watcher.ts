@@ -3,11 +3,13 @@
  * Uses fs.watch (no dependencies) with debounced auto-sync.
  *
  * Pattern: File saved → mark dirty → debounce 2s → sync
- * Reference: KiroGraph's hook-based sync, adapted for standalone use.
+ * Falls back to polling mode (dirty flag) if fs.watch is unsupported.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { logWarn } from './errors';
+import { isExcludedPath } from './utils';
 
 const WATCH_EXTENSIONS = new Set([
   '.ts', '.tsx', '.js', '.jsx', '.py',
@@ -16,14 +18,29 @@ const WATCH_EXTENSIONS = new Set([
   '.cs',
 ]);
 
+const DEFAULT_EXCLUDES = [
+  'node_modules/**',
+  'dist/**',
+  'build/**',
+  '.git/**',
+  '__pycache__/**',
+  '.venv/**',
+  '.tox/**',
+  'coverage/**',
+  '.kimigraph/**',
+  'target/**',
+];
+
 export interface WatcherOptions {
   debounceMs?: number;
+  excludePatterns?: string[];
 }
 
 export class GraphWatcher {
   private projectRoot: string;
   private onSync: () => void | Promise<void>;
   private debounceMs: number;
+  private excludePatterns: string[];
   private watcher: fs.FSWatcher | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
   private dirty = false;
@@ -36,6 +53,7 @@ export class GraphWatcher {
     this.projectRoot = projectRoot;
     this.onSync = onSync;
     this.debounceMs = opts.debounceMs ?? 2000;
+    this.excludePatterns = opts.excludePatterns ?? DEFAULT_EXCLUDES;
   }
 
   /** Start watching the project root recursively. */
@@ -52,15 +70,20 @@ export class GraphWatcher {
           const ext = path.extname(filename).toLowerCase();
           if (!WATCH_EXTENSIONS.has(ext)) return;
 
-          // Ignore changes inside .kimigraph/
-          if (filename.includes('.kimigraph')) return;
+          const normalized = filename.replace(/\\/g, '/');
+
+          if (isExcludedPath(normalized, this.excludePatterns)) {
+            return;
+          }
 
           this.markDirty();
         }
       );
-    } catch {
-      // fs.watch recursive may not work on all platforms
-      // Fallback: silently skip watcher
+    } catch (err) {
+      // fs.watch recursive may not work on all platforms (Linux older kernels, network FS)
+      logWarn('File watcher failed to start:', err instanceof Error ? err.message : String(err));
+      logWarn('Falling back to polling mode — graph will be treated as dirty on each query.');
+      this.dirty = true;
     }
   }
 

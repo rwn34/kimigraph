@@ -1,29 +1,40 @@
 /**
  * KimiGraph benchmark harness.
- * Measures how many files the graph covers vs. total files in a project.
- * This is a proxy for the tool-call reduction KimiGraph provides.
+ * Measures real query performance and search strategy effectiveness.
+ *
+ * Reports:
+ *   - Indexing time (structural vs with embeddings)
+ *   - Query latency per search strategy (exact, FTS, semantic, LIKE)
+ *   - Strategy contribution breakdown (which strategy found relevant nodes)
+ *   - File coverage as a secondary metric
  *
  * Usage:
- *   npx tsx scripts/benchmark.ts                    # Run on default 3 fixtures + self
+ *   npx tsx scripts/benchmark.ts                    # Run on default fixtures + self
  *   npx tsx scripts/benchmark.ts <project-path>...  # Run on specified projects
  */
 
 import * as path from 'path';
 import * as fs from 'fs';
 import { KimiGraph } from '../src/index';
+import { QueryBuilder } from '../src/db/queries';
+import { getEmbedder } from '../src/embeddings';
+
+interface QueryResult {
+  query: string;
+  latencyMs: number;
+  entryPoints: number;
+  relatedNodes: number;
+  filesCovered: number;
+  strategyBreakdown: Record<string, number>;
+}
 
 interface BenchmarkResult {
   project: string;
   totalFiles: number;
-  questions: Array<{
-    query: string;
-    exploreCalls: number;
-    filesCovered: number;
-    sectionsReturned: number;
-  }>;
-  avgFilesCovered: number;
-  fileReductionPercent: number;
-  toolCallReductionPercent: number;
+  structuralIndexMs: number;
+  embeddingIndexMs: number | null;
+  queries: QueryResult[];
+  avgQueryLatencyMs: number;
   durationMs: number;
 }
 
@@ -58,90 +69,109 @@ const PROJECT_QUESTIONS: Record<string, string[]> = {
   ],
 };
 
+function countSourceFiles(dir: string): number {
+  const ignoreDirs = new Set(['node_modules', '.git', 'dist', 'build', '.kimigraph', '.kimi', 'coverage', 'target']);
+  const exts = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.cs']);
+  let count = 0;
+  function walk(current: string) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch { return; }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!ignoreDirs.has(entry.name)) walk(full);
+      } else if (entry.isFile() && exts.has(path.extname(entry.name).toLowerCase())) {
+        count++;
+      }
+    }
+  }
+  walk(dir);
+  return count;
+}
+
 async function benchmarkProject(projectPath: string): Promise<BenchmarkResult> {
   const absPath = path.resolve(projectPath);
   const projectName = path.basename(absPath);
   const startTime = Date.now();
 
-  // Count total source files (excluding common ignored dirs)
-  const ignoreDirs = new Set(['node_modules', '.git', 'dist', 'build', '.kimigraph', '.kimi', 'coverage', 'target']);
+  const totalFiles = countSourceFiles(absPath);
 
-  function countSourceFiles(dir: string): string[] {
-    const files: string[] = [];
-    function walk(current: string) {
-      let entries: fs.Dirent[];
-      try {
-        entries = fs.readdirSync(current, { withFileTypes: true });
-      } catch { return; }
-      for (const entry of entries) {
-        const full = path.join(current, entry.name);
-        if (entry.isDirectory()) {
-          if (!ignoreDirs.has(entry.name)) walk(full);
-        } else if (entry.isFile()) {
-          const ext = path.extname(entry.name).toLowerCase();
-          if (['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.cs'].includes(ext)) {
-            files.push(full);
-          }
-        }
-      }
-    }
-    walk(dir);
-    return files;
-  }
+  // Structural index only
+  const kgStruct = await KimiGraph.init(absPath, { embedSymbols: false });
+  const t0 = Date.now();
+  await kgStruct.indexAll();
+  const structuralIndexMs = Date.now() - t0;
 
-  const sourceFiles = countSourceFiles(absPath);
+  // Embedding-enhanced index
+  let embeddingIndexMs: number | null = null;
+  const kgEmbed = await KimiGraph.init(absPath, { embedSymbols: true });
+  const t1 = Date.now();
+  await kgEmbed.indexAll();
+  embeddingIndexMs = Date.now() - t1;
 
-  // Initialize and index (use open if already initialized)
-  let kg: KimiGraph;
-  if (fs.existsSync(path.join(absPath, '.kimigraph'))) {
-    kg = await KimiGraph.open(absPath);
-  } else {
-    kg = await KimiGraph.init(absPath);
-  }
-  await kg.indexAll();
+  kgStruct.close();
 
-  const questions: BenchmarkResult['questions'] = [];
-
+  const queries: QueryResult[] = [];
   const questionsToAsk = PROJECT_QUESTIONS[projectName] || DEFAULT_QUESTIONS;
+
   for (const query of questionsToAsk) {
-    const ctx = await kg.buildContext(query, { maxNodes: 20, includeCode: true });
+    const qStart = Date.now();
+    const ctx = await kgEmbed.buildContext(query, { maxNodes: 20, includeCode: true });
+    const latencyMs = Date.now() - qStart;
 
     const coveredFiles = new Set<string>();
     for (const node of [...ctx.entryPoints, ...ctx.relatedNodes]) {
       coveredFiles.add(node.filePath);
     }
 
-    questions.push({
+    // Determine which strategies contributed by re-running them individually
+    const db = (kgEmbed as any).db;
+    const queriesObj = (kgEmbed as any).queries as QueryBuilder;
+    const strategyBreakdown: Record<string, number> = {};
+
+    try {
+      strategyBreakdown.exact = queriesObj.findNodesByExactName(query.split(/\s+/)[0] ?? query, { limit: 20 }).length;
+    } catch { strategyBreakdown.exact = 0; }
+
+    try {
+      strategyBreakdown.fts = queriesObj.searchNodesFTS(query, { limit: 20 }).length;
+    } catch { strategyBreakdown.fts = 0; }
+
+    if (db.hasVecExtension()) {
+      try {
+        const embedder = getEmbedder({ model: 'nomic-ai/nomic-embed-text-v1.5', batchSize: 8 });
+        const vec = await embedder.embedOne(query);
+        strategyBreakdown.semantic = queriesObj.searchNodesSemantic(vec, { limit: 20 }).length;
+      } catch { strategyBreakdown.semantic = 0; }
+    }
+
+    try {
+      strategyBreakdown.like = queriesObj.searchNodesLike(query.split(/\s+/)[0] ?? query, { limit: 20 }).length;
+    } catch { strategyBreakdown.like = 0; }
+
+    queries.push({
       query,
-      exploreCalls: 1,
+      latencyMs,
+      entryPoints: ctx.entryPoints.length,
+      relatedNodes: ctx.relatedNodes.length,
       filesCovered: coveredFiles.size,
-      sectionsReturned: ctx.codeSnippets.size,
+      strategyBreakdown,
     });
   }
 
-  kg.close();
+  kgEmbed.close();
 
-  const avgFilesCovered = questions.reduce((s, q) => s + q.filesCovered, 0) / questions.length;
-  const fileReductionPercent = sourceFiles.length > 0
-    ? Math.round(((sourceFiles.length - avgFilesCovered) / sourceFiles.length) * 100)
-    : 0;
-
-  // Tool-call reduction proxy:
-  // Without graph: 1 grep + N file reads = 1 + filesCovered calls
-  // With graph: 1 explore call
-  const withoutGraphCalls = 1 + avgFilesCovered;
-  const withGraphCalls = 1;
-  const toolCallReductionPercent = Math.round(
-    ((withoutGraphCalls - withGraphCalls) / withoutGraphCalls) * 100
-  );
+  const avgQueryLatencyMs = queries.reduce((s, q) => s + q.latencyMs, 0) / Math.max(1, queries.length);
 
   return {
     project: projectName,
-    totalFiles: sourceFiles.length,
-    questions,
-    avgFilesCovered,
-    fileReductionPercent,
-    toolCallReductionPercent,
+    totalFiles,
+    structuralIndexMs,
+    embeddingIndexMs,
+    queries,
+    avgQueryLatencyMs,
     durationMs: Date.now() - startTime,
   };
 }
@@ -169,44 +199,26 @@ async function main() {
   for (const r of results) {
     console.log(`Project: ${r.project}`);
     console.log(`  Total source files: ${r.totalFiles}`);
-    console.log(`  Avg files covered by explore: ${r.avgFilesCovered.toFixed(1)}`);
-    console.log(`  File reduction: ${r.fileReductionPercent}%`);
-    console.log(`  Tool-call reduction: ${r.toolCallReductionPercent}%`);
-    console.log(`  Index duration: ${r.durationMs}ms`);
+    console.log(`  Structural index: ${r.structuralIndexMs}ms`);
+    console.log(`  Embedding index: ${r.embeddingIndexMs ?? 'N/A'}ms`);
+    console.log(`  Embedding overhead: ${r.embeddingIndexMs ? `${(r.embeddingIndexMs / r.structuralIndexMs).toFixed(2)}×` : 'N/A'}`);
+    console.log(`  Avg query latency: ${r.avgQueryLatencyMs.toFixed(0)}ms`);
     console.log(`  Questions:`);
-    for (const q of r.questions) {
+    for (const q of r.queries) {
+      const strategies = Object.entries(q.strategyBreakdown)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(', ');
       console.log(`    - "${q.query}"`);
-      console.log(`      → ${q.exploreCalls} explore call, ${q.filesCovered} files, ${q.sectionsReturned} sections`);
+      console.log(`      → ${q.latencyMs}ms, ${q.entryPoints}+${q.relatedNodes} nodes, ${q.filesCovered} files`);
+      console.log(`        strategies: ${strategies || 'none'}`);
     }
-    console.log('');
+    console.log();
   }
 
-  const validResults = results.filter((r) => r.totalFiles > 0);
-
-  const avgFileReduction = validResults.length > 0
-    ? Math.round(validResults.reduce((s, r) => s + r.fileReductionPercent, 0) / validResults.length)
-    : 0;
-  const avgToolCallReduction = validResults.length > 0
-    ? Math.round(validResults.reduce((s, r) => s + r.toolCallReductionPercent, 0) / validResults.length)
-    : 0;
-
-  console.log(`Overall avg file reduction across ${validResults.length} repo(s): ${avgFileReduction}%`);
-  console.log(`Overall avg tool-call reduction across ${validResults.length} repo(s): ${avgToolCallReduction}%`);
-
-  if (avgToolCallReduction >= 70) {
-    console.log(`✅ PASS: ≥70% tool-call reduction threshold met`);
-  } else {
-    console.log(`❌ FAIL: <70% tool-call reduction threshold`);
-  }
-
-  // Write JSON report
-  const reportPath = path.join(process.cwd(), 'benchmark-report.json');
-  fs.writeFileSync(
-    reportPath,
-    JSON.stringify({ results, overallAvgFileReduction: avgFileReduction, overallAvgToolCallReduction: avgToolCallReduction, passed: avgToolCallReduction >= 70 }, null, 2),
-    'utf8'
-  );
-  console.log(`\nReport written to: ${reportPath}`);
+  const avgLatency = results.reduce((s, r) => s + r.avgQueryLatencyMs, 0) / Math.max(1, results.length);
+  console.log(`Average query latency: ${avgLatency.toFixed(0)}ms`);
+  console.log();
 }
 
 main().catch(console.error);

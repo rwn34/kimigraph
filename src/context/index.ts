@@ -47,11 +47,11 @@ export class ContextBuilder {
     // Step 1: Extract symbol tokens from task
     const tokens = extractSymbolTokens(task);
 
-    // Step 2: Find entry points via search
-    const entryPoints = await this.findEntryPoints(tokens, task);
+    // Step 2: Find entry points via search (capped to maxNodes)
+    const entryPoints = await this.findEntryPoints(tokens, task, maxNodes);
 
     // Step 3: Expand via graph traversal
-    const relatedNodes = this.expandGraph(entryPoints, maxNodes);
+    const relatedNodes = this.expandGraph(entryPoints, maxNodes - entryPoints.length);
 
     // Step 4: Collect unique nodes
     const allNodes = new Map<string, Node>();
@@ -75,61 +75,49 @@ export class ContextBuilder {
     };
   }
 
-  private async findEntryPoints(tokens: string[], task: string): Promise<Node[]> {
+  private async findEntryPoints(tokens: string[], task: string, maxNodes: number): Promise<Node[]> {
     const results: Node[] = [];
     const seen = new Set<string>();
 
-    // Try exact name matches first
+    const addNodes = (nodes: Node[]) => {
+      for (const node of nodes) {
+        if (results.length >= maxNodes) break;
+        if (!seen.has(node.id)) {
+          seen.add(node.id);
+          results.push(node);
+        }
+      }
+    };
+
+    // Try exact name matches first (fastest, most precise)
     for (const token of tokens) {
-      const exact = this.queries.findNodesByExactName(token, { limit: 5 });
-      for (const node of exact) {
-        if (!seen.has(node.id)) {
-          seen.add(node.id);
-          results.push(node);
-        }
-      }
+      if (results.length >= maxNodes) break;
+      addNodes(this.queries.findNodesByExactName(token, { limit: 5 }));
     }
 
-    // Fallback to FTS
-    if (results.length === 0) {
-      const fts = this.queries.searchNodesFTS(task, { limit: 10 });
-      for (const node of fts) {
-        if (!seen.has(node.id)) {
-          seen.add(node.id);
-          results.push(node);
-        }
-      }
+    // Fill remaining budget with FTS
+    if (results.length < maxNodes) {
+      addNodes(this.queries.searchNodesFTS(task, { limit: maxNodes - results.length }));
     }
 
-    // Fallback to semantic search
-    if (results.length === 0 && this.config.embedSymbols && this.db.hasVecExtension()) {
+    // Fill remaining budget with semantic search (complements FTS, not just a fallback)
+    if (results.length < maxNodes && this.config.embedSymbols && this.db.hasVecExtension()) {
       try {
         const embedder = getEmbedder({
           model: this.config.embeddingModel,
           batchSize: this.config.embeddingBatchSize,
         });
         const queryEmbedding = await embedder.embedOne(task);
-        const semantic = this.queries.searchNodesSemantic(queryEmbedding, { limit: 10 });
-        for (const { node } of semantic) {
-          if (!seen.has(node.id)) {
-            seen.add(node.id);
-            results.push(node);
-          }
-        }
+        const semantic = this.queries.searchNodesSemantic(queryEmbedding, { limit: maxNodes - results.length });
+        addNodes(semantic.map((r) => r.node));
       } catch {
         // Semantic search failed, fall through
       }
     }
 
-    // Fallback to LIKE
-    if (results.length === 0 && tokens.length > 0) {
-      const like = this.queries.searchNodesLike(tokens[0], { limit: 10 });
-      for (const node of like) {
-        if (!seen.has(node.id)) {
-          seen.add(node.id);
-          results.push(node);
-        }
-      }
+    // Last resort: LIKE search
+    if (results.length < maxNodes && tokens.length > 0) {
+      addNodes(this.queries.searchNodesLike(tokens[0], { limit: maxNodes - results.length }));
     }
 
     return results;
@@ -146,7 +134,7 @@ export class ContextBuilder {
         maxDepth: 2,
         maxNodes: maxNodes - result.length,
         direction: 'both',
-        edgeKinds: ['calls', 'imports', 'references', 'extends', 'implements', 'contains'],
+        edgeKinds: ['calls', 'imports', 'extends', 'implements', 'contains'],
       });
 
       for (const node of subgraph.nodes) {

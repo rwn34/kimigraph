@@ -219,10 +219,35 @@ export class ReferenceResolver {
   }
 
   private parseJsImports(source: string, map: Map<string, string>): void {
-    // Named imports: import { foo, bar } from './module'
-    const namedImportRegex = /import\s*\{\s*([^}]+)\s*\}\s*from\s*['"]([^'"]+)['"]/g;
+    // Normalize source: collapse multi-line imports to single line
+    const normalized = source.replace(/import\s*\{[^}]*\n[^}]*\}\s*from/g, (m) => m.replace(/\n/g, ' '));
+
+    // Named imports: import { foo, bar } from './module' or import type { foo } from './module'
+    const namedImportRegex = /import\s+(?:type\s+)?\{\s*([^}]+)\s*\}\s*from\s*['"]([^'"]+)['"]/g;
     let m: RegExpExecArray | null;
-    while ((m = namedImportRegex.exec(source)) !== null) {
+    while ((m = namedImportRegex.exec(normalized)) !== null) {
+      const names = m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop()!.trim());
+      const moduleSource = m[2];
+      for (const n of names) {
+        if (n && n !== 'type') map.set(n, moduleSource);
+      }
+    }
+
+    // Default imports: import foo from './module'
+    const defaultImportRegex = /import\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g;
+    while ((m = defaultImportRegex.exec(normalized)) !== null) {
+      map.set(m[1], m[2]);
+    }
+
+    // Namespace imports: import * as foo from './module'
+    const namespaceImportRegex = /import\s*\*\s*as\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g;
+    while ((m = namespaceImportRegex.exec(normalized)) !== null) {
+      map.set(m[1], m[2]);
+    }
+
+    // Re-exports: export { foo } from './module'
+    const reExportRegex = /export\s+\{\s*([^}]+)\s*\}\s*from\s*['"]([^'"]+)['"]/g;
+    while ((m = reExportRegex.exec(normalized)) !== null) {
       const names = m[1].split(',').map((s) => s.trim().split(/\s+as\s+/).pop()!.trim());
       const moduleSource = m[2];
       for (const n of names) {
@@ -230,16 +255,20 @@ export class ReferenceResolver {
       }
     }
 
-    // Default imports: import foo from './module'
-    const defaultImportRegex = /import\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g;
-    while ((m = defaultImportRegex.exec(source)) !== null) {
-      map.set(m[1], m[2]);
-    }
-
-    // Namespace imports: import * as foo from './module'
-    const namespaceImportRegex = /import\s*\*\s*as\s+(\w+)\s+from\s*['"]([^'"]+)['"]/g;
-    while ((m = namespaceImportRegex.exec(source)) !== null) {
-      map.set(m[1], m[2]);
+    // CJS require: const foo = require('./module')
+    const requireRegex = /(?:const|let|var)\s+(?:\{\s*([^}]+)\s*\}|(\w+))\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+    while ((m = requireRegex.exec(source)) !== null) {
+      const moduleSource = m[3];
+      if (m[1]) {
+        // destructured require: const { foo } = require('./module')
+        const names = m[1].split(',').map((s) => s.trim().split(/\s*:\s*/).pop()!.trim());
+        for (const n of names) {
+          if (n) map.set(n, moduleSource);
+        }
+      } else if (m[2]) {
+        // simple require: const foo = require('./module')
+        map.set(m[2], moduleSource);
+      }
     }
   }
 
@@ -316,20 +345,40 @@ export class ReferenceResolver {
           if (n) map.set(n, `${basePath}::${n}`);
         }
       } else {
-        // use crate::foo::bar;
+        // use crate::foo::bar;  -> map bar -> crate::foo (module path)
         const segments = basePath.split('::');
         const lastName = segments[segments.length - 1];
-        map.set(lastName, basePath);
+        const modulePath = segments.length > 1 ? segments.slice(0, -1).join('::') : basePath;
+        map.set(lastName, modulePath);
       }
     }
   }
 
   private resolveModuleToFile(moduleSource: string, fromFile: string): string | null {
-    if (!moduleSource.startsWith('.') && !moduleSource.startsWith('/')) {
+    const ext = path.extname(fromFile).toLowerCase();
+
+    // Rust crate paths: crate::foo::bar -> src/foo/bar.rs
+    if (moduleSource.startsWith('crate::')) {
+      const relPath = moduleSource.slice('crate::'.length).replace(/::/g, '/');
+      const candidates = [
+        path.join(this.projectRoot, 'src', relPath + '.rs'),
+        path.join(this.projectRoot, 'src', relPath, 'mod.rs'),
+      ];
+      for (const candidate of candidates) {
+        if (fs.existsSync(candidate)) {
+          return path.relative(this.projectRoot, candidate).replace(/\\/g, '/');
+        }
+      }
+      return null;
+    }
+
+    // JS/TS/Go: bare words without . or / prefix are external packages
+    const isJsTsGo = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.go'].includes(ext);
+    if (isJsTsGo && !moduleSource.startsWith('.') && !moduleSource.startsWith('/')) {
       return null; // external module
     }
+
     const sourceDir = path.dirname(path.join(this.projectRoot, fromFile));
-    const ext = path.extname(fromFile).toLowerCase();
 
     // Language-specific extension candidates
     const extCandidates: string[] = [];
@@ -351,7 +400,7 @@ export class ReferenceResolver {
       candidates.push(path.join(sourceDir, moduleSource + e));
     }
     // Index files for JS/TS
-    if (ext !== '.py' && ext !== '.go' && ext !== '.java' && ext !== '.rs') {
+    if (!['.py', '.go', '.java', '.rs'].includes(ext)) {
       for (const e of ['.ts', '.tsx', '.js', '.jsx']) {
         candidates.push(path.join(sourceDir, moduleSource, 'index' + e));
       }
@@ -363,10 +412,16 @@ export class ReferenceResolver {
     // Rust module directory: foo/mod.rs or foo.rs
     if (ext === '.rs') {
       candidates.push(path.join(sourceDir, moduleSource, 'mod.rs'));
+      candidates.push(path.join(sourceDir, moduleSource + '.rs'));
+    }
+    // Java package paths: try project-root-relative and src/ fallback
+    if (ext === '.java' && moduleSource.includes('/')) {
+      candidates.push(path.join(this.projectRoot, moduleSource + '.java'));
+      candidates.push(path.join(this.projectRoot, 'src', moduleSource + '.java'));
     }
 
     for (const candidate of candidates) {
-      if (fs.existsSync(candidate)) {
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
         return path.relative(this.projectRoot, candidate).replace(/\\/g, '/');
       }
     }
@@ -409,6 +464,25 @@ export class ReferenceResolver {
         );
         if (match) {
           return { targetId: match.id, strategy: 'import-aware' };
+        }
+      }
+    }
+
+    // Strategy 2.5b: Java method resolution via imported classes
+    // Java imports classes (e.g. import com.example.Helper), but unresolved refs
+    // are method names (e.g. Helper.help() -> ref 'help'). Search imported classes.
+    const ext = path.extname(ref.filePath).toLowerCase();
+    if (!moduleSource && ext === '.java' && importMap.size > 0) {
+      for (const [, importedPath] of importMap) {
+        const resolvedFile = this.resolveModuleToFile(importedPath, ref.filePath);
+        if (resolvedFile) {
+          const fileNodes = nodesByFile.get(resolvedFile) ?? [];
+          const match = fileNodes.find(
+            (n) => n.name === name && ['function', 'method', 'class', 'variable'].includes(n.kind)
+          );
+          if (match) {
+            return { targetId: match.id, strategy: 'java-import-method' };
+          }
         }
       }
     }
@@ -459,8 +533,8 @@ export class ReferenceResolver {
           }
         }
       }
-      // Fall back to first match
-      return { targetId: typeNodes[0].id, strategy: 'inheritance-first' };
+      // Ambiguous: don't create a potentially wrong edge
+      return { targetId: null, strategy: 'inheritance-ambiguous' };
     }
     return { targetId: null, strategy: 'inheritance-unresolved' };
   }

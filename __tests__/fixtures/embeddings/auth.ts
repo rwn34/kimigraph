@@ -1,20 +1,15 @@
+/**
+ * Authentication middleware that verifies JSON Web Token signatures and checks expiration dates.
+ * This is the core auth middleware used in the request pipeline to validate bearer credentials.
+ */
 export function validateJwt(token: string): boolean {
-  // Verify JWT signature and expiration
   return token.length > 0;
 }
 
+/**
+ * Check user credentials against the database and return a session token.
+ * This function handles the login flow but is not middleware.
+ */
 export function authenticateUser(email: string, password: string): string {
-  // Check credentials and return session token
   return 'session-' + email;
-}
-
-export function requireAuth(req: any, res: any, next: any): void {
-  // Middleware that checks auth header
-  const header = req.headers['authorization'];
-  if (!header) {
-    res.statusCode = 401;
-    res.end('Unauthorized');
-    return;
-  }
-  next();
 }

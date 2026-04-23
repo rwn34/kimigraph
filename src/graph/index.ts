@@ -51,7 +51,7 @@ export class GraphTraverser {
     if (!root) return { nodes: [], edges: [], entryPoints: [] };
     nodes.set(nodeId, root);
 
-    this.bfs(nodeId, 'inbound', ['calls', 'imports', 'references', 'extends', 'ffi'], depth, nodes, edges);
+    this.bfs(nodeId, 'inbound', ['calls', 'imports', 'extends', 'ffi'], depth, nodes, edges);
 
     return {
       nodes: [...nodes.values()],

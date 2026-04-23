@@ -21,6 +21,21 @@ function mapKind(kind: string): string {
   return kind;
 }
 
+function mapLanguageToFence(language: string): string {
+  const map: Record<string, string> = {
+    typescript: 'typescript',
+    javascript: 'javascript',
+    python: 'python',
+    go: 'go',
+    rust: 'rust',
+    java: 'java',
+    c: 'c',
+    cpp: 'cpp',
+    csharp: 'csharp',
+  };
+  return map[language] ?? '';
+}
+
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -196,6 +211,7 @@ export class ToolHandler {
     if (this.connections.has(resolved)) return this.connections.get(resolved)!;
     try {
       const kg = await KimiGraph.open(resolved);
+      kg.watch();
       this.connections.set(resolved, kg);
       return kg;
     } catch {
@@ -371,7 +387,7 @@ export class ToolHandler {
 
       case 'kimigraph_explore': {
         const budget = (args.budget as string) ?? 'medium';
-        const maxNodes = budget === 'small' ? 10 : budget === 'large' ? 40 : 20;
+        const maxNodes = budget === 'small' ? 5 : budget === 'large' ? 30 : 15;
         const ctx = await kg.buildContext(args.query as string, {
           maxNodes,
           includeCode: true,
@@ -389,6 +405,37 @@ export class ToolHandler {
         lines.push('---');
         lines.push('');
 
+        // Relationship map: show how entry points connect via calls/imports
+        const epSet = new Set(ctx.entryPoints.map((n) => n.id));
+        const relSet = new Set(ctx.relatedNodes.map((n) => n.id));
+        const connections: Array<{ from: string; to: string; kind: string }> = [];
+
+        for (const ep of ctx.entryPoints) {
+          // Check if this entry point calls other entry points or related nodes
+          const callees = kg.getCallees(ep.id, 10);
+          for (const c of callees) {
+            if (epSet.has(c.id) || relSet.has(c.id)) {
+              connections.push({ from: ep.name, to: c.name, kind: 'calls' });
+            }
+          }
+          // Check if this entry point is called by other entry points
+          const callers = kg.getCallers(ep.id, 10);
+          for (const c of callers) {
+            if (epSet.has(c.id) || relSet.has(c.id)) {
+              connections.push({ from: c.name, to: ep.name, kind: 'called by' });
+            }
+          }
+        }
+
+        if (connections.length > 0) {
+          lines.push('### Relationship Map');
+          lines.push('');
+          for (const conn of connections) {
+            lines.push(`- \`${conn.from}\` **${conn.kind}** \`${conn.to}\``);
+          }
+          lines.push('');
+        }
+
         // Entry points with full source
         lines.push(`### Entry Points (${ctx.entryPoints.length})`);
         lines.push('');
@@ -399,7 +446,8 @@ export class ToolHandler {
           const code = ctx.codeSnippets.get(n.id);
           if (code) {
             lines.push('');
-            lines.push('```typescript');
+            const fence = mapLanguageToFence(n.language);
+            lines.push(fence ? `\`\`\`${fence}` : '```');
             lines.push(code);
             lines.push('```');
           }
@@ -415,7 +463,8 @@ export class ToolHandler {
             const code = ctx.codeSnippets.get(n.id);
             if (code) {
               lines.push('');
-              lines.push('```typescript');
+              const fence = mapLanguageToFence(n.language);
+              lines.push(fence ? `\`\`\`${fence}` : '```');
               lines.push(code);
               lines.push('```');
             }
