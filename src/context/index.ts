@@ -139,6 +139,8 @@ export class ContextBuilder {
 
       for (const node of subgraph.nodes) {
         if (!seen.has(node.id) && node.id !== ep.id) {
+          // Skip low-value container nodes that blow the budget
+          if (node.kind === 'import' || node.kind === 'export' || node.kind === 'comment' || node.kind === 'file') continue;
           seen.add(node.id);
           result.push(node);
           if (result.length >= maxNodes) break;

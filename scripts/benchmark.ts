@@ -219,6 +219,11 @@ async function main() {
   const avgLatency = results.reduce((s, r) => s + r.avgQueryLatencyMs, 0) / Math.max(1, results.length);
   console.log(`Average query latency: ${avgLatency.toFixed(0)}ms`);
   console.log();
+
+  // Write JSON report for CI/tracking
+  const reportPath = path.resolve('benchmark-report.json');
+  fs.writeFileSync(reportPath, JSON.stringify({ results, avgLatency, generatedAt: new Date().toISOString() }, null, 2));
+  console.log(`Report written to ${reportPath}`);
 }
 
 main().catch(console.error);

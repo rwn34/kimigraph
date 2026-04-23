@@ -142,6 +142,7 @@ KimiGraph installs via npm. Native dependencies (`better-sqlite3`, `sqlite-vec`)
 | `kimigraph init [path]` | Initialize `.kimigraph/` in a project |
 | `kimigraph index [path]` | Full re-index of the codebase |
 | `kimigraph sync [path]` | Incremental sync of changed files |
+| `kimigraph watch [path]` | Watch source files and auto-sync on changes |
 | `kimigraph status [path]` | Show index statistics |
 | `kimigraph query <search>` | Search symbols by name |
 | `kimigraph callers <symbol>` | Find who calls a symbol |
@@ -317,6 +318,9 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Non-JS cross-file resolution** | Python `from/import`, Go `import` not resolved; relied on fragile global name match | ✅ **Fixed** — `buildImportMap()` parses Python, Go, Java, and Rust imports; cross-file call edges resolved |
 | **Incremental sync losing edges** | Modified files deleted all incoming cross-file edges, never regenerated | ✅ **Fixed** — sync only deletes outgoing edges; `pruneDanglingEdges()` cleans up stale edges post-resolve |
 | **FTS5 query broken** | `nodes.id` (TEXT) compared to `rowid` (INTEGER), so FTS never matched | ✅ **Fixed** — uses `rowid IN (SELECT rowid FROM nodes_fts ...)` |
+| **Budget cap not enforced** | `findEntryPoints` returned uncapped results; explore budget was advisory | ✅ **Fixed** — hard caps at every strategy tier; `small=5`, `medium=15`, `large=30` |
+| **MCP connection leak** | `ToolHandler.connections` grew unbounded; each project opened a new DB + watcher | ✅ **Fixed** — LRU eviction (max 10) with `kg.close()` on evict |
+| **No CLI watch command** | Watcher only available inside MCP server | ✅ **Fixed** — `kimigraph watch [path]` with `--debounce` flag and graceful SIGINT handling |
 | **Semantic search unreachable** | Semantic path skipped if FTS found any result | ✅ **Fixed** — all search strategies (exact → FTS → semantic → LIKE) now merge results up to the budget cap |
 | **Dead code / cycles** | `findDeadCode()` and `findCircularDependencies()` existed but unexposed | ✅ **Fixed** — exposed as `kimigraph_dead_code` and `kimigraph_cycles` MCP tools |
 | **Docstring extraction** | Only single-line `//`/`#` previews captured; multi-line JSDoc, `""""""`, `///` missed | ✅ **Fixed** — `extractDocstring()` collects consecutive preceding line comments, parses `/** ... */` blocks, and extracts Python `"""..."""` docstrings from function/class bodies |
@@ -329,6 +333,7 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 
 - **Indexing:** 100-file repo ≈ 1.5–3s structural, ≈ 2.5–5s with embeddings (first run includes model download)
 - **Query:** All graph queries are sub-millisecond (SQLite in-memory + indexes)
+- **MCP cache:** Connection LRU cache (max 10 projects) prevents handle leaks in long-running MCP servers
 - **Memory:** Vectors stay in SQLite (vec0), not loaded into memory
 - **Disk:** ~1-5MB per 100 files for structural index; ~2-5MB additional for embeddings
 
@@ -376,6 +381,7 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 - [x] Java and Rust import parsing for cross-file resolution
 - [x] Cross-file inheritance resolution (`extends`/`implements` across files)
 - [x] Expose `findPath` as `kimigraph_path` MCP tool
+- [x] NodeKind governance test (enforces ≤15 kinds hard limit)
 - [ ] Type-aware search (find by signature: `"User -> string"`)
 - [ ] Cross-language resolution (WASM → C++ symbols, protobuf boundaries)
 - [x] Incremental embedding updates (only re-embed changed symbols)
@@ -394,7 +400,7 @@ Measured on 4 repos (TypeScript API, Go CLI, Rust library, and self):
 | Avg query latency | **< 100ms** |
 | Embedding overhead vs structural | **~1.5×** (100 files, warmed model) |
 | Indexing with embeddings | **< 5s** for 100 files |
-| Test coverage | **103 tests** across 21 test files |
+| Test coverage | **107 tests** across 22 test files |
 
 Run yourself: `npm run benchmark`
 

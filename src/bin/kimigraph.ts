@@ -95,6 +95,45 @@ program
   });
 
 // --------------------------------------------------------------------------
+// watch
+// --------------------------------------------------------------------------
+program
+  .command('watch [project-path]')
+  .description('Watch source files and auto-sync on changes')
+  .option('-d, --debounce <ms>', 'Debounce interval in milliseconds', '2000')
+  .action(async (projectPath: string = '.', options: { debounce: string }) => {
+    try {
+      const resolved = path.resolve(projectPath);
+      const kg = await KimiGraph.open(resolved);
+
+      const debounceMs = parseInt(options.debounce, 10);
+      kg.watch({ debounceMs });
+      console.log(`Watching ${resolved} for changes (debounce: ${debounceMs}ms)`);
+      console.log('Press Ctrl+C to stop');
+
+      const cleanup = () => {
+        console.log('\nStopping watcher...');
+        kg.unwatch();
+        kg.close();
+        process.exit(0);
+      };
+
+      process.on('SIGINT', cleanup);
+      process.on('SIGTERM', cleanup);
+
+      // Keep process alive
+      setInterval(() => {
+        if (kg.isDirty()) {
+          console.log(`[${new Date().toISOString()}] Changes detected, syncing...`);
+        }
+      }, 5000);
+    } catch (err) {
+      logError(String(err));
+      process.exit(1);
+    }
+  });
+
+// --------------------------------------------------------------------------
 // status
 // --------------------------------------------------------------------------
 program

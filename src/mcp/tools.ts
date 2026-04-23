@@ -186,9 +186,12 @@ export const tools: ToolDefinition[] = [
   },
 ];
 
+const MAX_CONNECTIONS = 10;
+
 export class ToolHandler {
   private defaultKg: KimiGraph | null;
   private connections = new Map<string, KimiGraph>();
+  private lastAccessed = new Map<string, number>();
 
   constructor(kg: KimiGraph | null) {
     this.defaultKg = kg;
@@ -203,16 +206,42 @@ export class ToolHandler {
       try { kg.close(); } catch { /* ignore */ }
     }
     this.connections.clear();
+    this.lastAccessed.clear();
+  }
+
+  private evictOldestIfNeeded(): void {
+    if (this.connections.size < MAX_CONNECTIONS) return;
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+    for (const [key, time] of this.lastAccessed) {
+      if (time < oldestTime) {
+        oldestTime = time;
+        oldestKey = key;
+      }
+    }
+    if (oldestKey) {
+      const kg = this.connections.get(oldestKey);
+      if (kg) {
+        try { kg.close(); } catch { /* ignore */ }
+      }
+      this.connections.delete(oldestKey);
+      this.lastAccessed.delete(oldestKey);
+    }
   }
 
   private async getConnection(projectPath?: string): Promise<KimiGraph | null> {
     if (!projectPath) return this.defaultKg;
     const resolved = require('path').resolve(projectPath);
-    if (this.connections.has(resolved)) return this.connections.get(resolved)!;
+    if (this.connections.has(resolved)) {
+      this.lastAccessed.set(resolved, Date.now());
+      return this.connections.get(resolved)!;
+    }
     try {
+      this.evictOldestIfNeeded();
       const kg = await KimiGraph.open(resolved);
       kg.watch();
       this.connections.set(resolved, kg);
+      this.lastAccessed.set(resolved, Date.now());
       return kg;
     } catch {
       return null;
@@ -408,21 +437,19 @@ export class ToolHandler {
         // Relationship map: show how entry points connect via calls/imports
         const epSet = new Set(ctx.entryPoints.map((n) => n.id));
         const relSet = new Set(ctx.relatedNodes.map((n) => n.id));
+        const connSeen = new Set<string>();
         const connections: Array<{ from: string; to: string; kind: string }> = [];
 
         for (const ep of ctx.entryPoints) {
-          // Check if this entry point calls other entry points or related nodes
           const callees = kg.getCallees(ep.id, 10);
           for (const c of callees) {
-            if (epSet.has(c.id) || relSet.has(c.id)) {
+            if (!epSet.has(c.id) && !relSet.has(c.id)) continue;
+            // Normalize direction to avoid duplicates (A→B and B←A)
+            const key = `${ep.name}|calls|${c.name}`;
+            const reverseKey = `${c.name}|calls|${ep.name}`;
+            if (!connSeen.has(key) && !connSeen.has(reverseKey)) {
+              connSeen.add(key);
               connections.push({ from: ep.name, to: c.name, kind: 'calls' });
-            }
-          }
-          // Check if this entry point is called by other entry points
-          const callers = kg.getCallers(ep.id, 10);
-          for (const c of callers) {
-            if (epSet.has(c.id) || relSet.has(c.id)) {
-              connections.push({ from: c.name, to: ep.name, kind: 'called by' });
             }
           }
         }

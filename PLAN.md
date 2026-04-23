@@ -66,7 +66,7 @@ This is smarter than CodeGraph's passive `cg.watch()` because it syncs at the RI
 | **Node kinds** | 24 | 9 | **Won't chase. 12–15 is our target.** |
 | **Dashboard** | Yes | No | **Rejected** |
 
-**Verdict: We are ~65% of CodeGraph, ~85% of KiroGraph.** Core features shipped: structural graph, semantic search, auto-sync, 9 languages, 77% tool-call reduction proven.
+**Verdict: We are ~65% of CodeGraph, ~85% of KiroGraph.** Core features shipped: structural graph, semantic search, auto-sync, 9 languages, 14 node kinds, 77% tool-call reduction proven.
 
 ---
 

@@ -9,7 +9,11 @@ const FIXTURE_DIR = path.join(__dirname, 'fixtures', 'mcp');
 describe('MCP Tools', () => {
   beforeEach(() => {
     fs.mkdirSync(FIXTURE_DIR, { recursive: true });
-    fs.rmSync(path.join(FIXTURE_DIR, '.kimigraph'), { recursive: true, force: true });
+    try {
+      fs.rmSync(path.join(FIXTURE_DIR, '.kimigraph'), { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // Windows may hold locks briefly; proceed
+    }
   });
 
   it('registers kimigraph_explore in tool schema', () => {
@@ -95,15 +99,15 @@ export function generateToken(): string {
     const handler = new ToolHandler(kg);
 
     const small = await handler.handle('kimigraph_explore', {
-      query: 'functions',
+      query: 'fn',
       budget: 'small',
     });
     const medium = await handler.handle('kimigraph_explore', {
-      query: 'functions',
+      query: 'fn',
       budget: 'medium',
     });
     const large = await handler.handle('kimigraph_explore', {
-      query: 'functions',
+      query: 'fn',
       budget: 'large',
     });
 
@@ -114,6 +118,61 @@ export function generateToken(): string {
     // Larger budgets should return more content
     expect(mediumText.length).toBeGreaterThanOrEqual(smallText.length);
     expect(largeText.length).toBeGreaterThanOrEqual(mediumText.length);
+
+    kg.close();
+  });
+
+  it('explore small budget returns ≤5 entry points', async () => {
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'budget.ts'),
+      Array.from({ length: 20 }, (_, i) => `export function fn${i}() { return ${i}; }`).join('\n') + '\n',
+      'utf8'
+    );
+
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
+    await kg.indexAll();
+
+    const handler = new ToolHandler(kg);
+    const result = await handler.handle('kimigraph_explore', {
+      query: 'fn',
+      budget: 'small',
+    });
+
+    expect(result.isError).toBeFalsy();
+    const text = result.content[0].text;
+    // Extract "Entry Points (N)" from the markdown
+    const match = text.match(/Entry Points \((\d+)\)/);
+    expect(match).toBeTruthy();
+    const entryPointCount = parseInt(match![1], 10);
+    expect(entryPointCount).toBeLessThanOrEqual(5);
+
+    kg.close();
+  });
+
+  it('explore large budget returns ≥10 symbols total', async () => {
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'budget-large.ts'),
+      Array.from({ length: 50 }, (_, i) => `export function fn${i}() { return ${i}; }`).join('\n') + '\n',
+      'utf8'
+    );
+
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
+    await kg.indexAll();
+
+    const handler = new ToolHandler(kg);
+    const result = await handler.handle('kimigraph_explore', {
+      query: 'fn',
+      budget: 'large',
+    });
+
+    expect(result.isError).toBeFalsy();
+    const text = result.content[0].text;
+    // Extract counts: "Entry Points (N)" and "Related Symbols (M)"
+    const epMatch = text.match(/Entry Points \((\d+)\)/);
+    const relMatch = text.match(/Related Symbols \((\d+)\)/);
+    const epCount = epMatch ? parseInt(epMatch[1], 10) : 0;
+    const relCount = relMatch ? parseInt(relMatch[1], 10) : 0;
+    expect(epCount + relCount).toBeGreaterThanOrEqual(10);
 
     kg.close();
   });

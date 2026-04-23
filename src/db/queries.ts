@@ -210,9 +210,14 @@ export class QueryBuilder {
   deleteNodesAndEdgesByFile(filePath: string): void {
     const ids = this.db.all<{ id: string }>('SELECT id FROM nodes WHERE file_path = ?', [filePath]);
     if (ids.length === 0) return;
-    const placeholders = ids.map(() => '?').join(',');
-    // Only delete outgoing edges from this file; preserve incoming cross-file edges
-    this.db.run(`DELETE FROM edges WHERE source IN (${placeholders})`, ids.map((r) => r.id));
+    // SQLite default variable limit is 999; batch deletions to stay safe
+    const SQLITE_LIMIT = 999;
+    for (let i = 0; i < ids.length; i += SQLITE_LIMIT) {
+      const batch = ids.slice(i, i + SQLITE_LIMIT);
+      const placeholders = batch.map(() => '?').join(',');
+      // Only delete outgoing edges from this file; preserve incoming cross-file edges
+      this.db.run(`DELETE FROM edges WHERE source IN (${placeholders})`, batch.map((r) => r.id));
+    }
     this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
   }
 
