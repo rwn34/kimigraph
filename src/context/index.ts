@@ -16,6 +16,7 @@ import { DatabaseConnection } from '../db';
 import { GraphTraverser } from '../graph';
 import { extractSymbolTokens } from '../utils';
 import { getEmbedder } from '../embeddings';
+import { logWarn } from '../errors';
 
 export class ContextBuilder {
   private queries: QueryBuilder;
@@ -110,8 +111,9 @@ export class ContextBuilder {
         const queryEmbedding = await embedder.embedOne(task);
         const semantic = this.queries.searchNodesSemantic(queryEmbedding, { limit: maxNodes - results.length });
         addNodes(semantic.map((r) => r.node));
-      } catch {
-        // Semantic search failed, fall through
+      } catch (err) {
+        logWarn('Semantic search failed:', err instanceof Error ? err.message : String(err));
+        // fall through to LIKE
       }
     }
 

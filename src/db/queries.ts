@@ -14,7 +14,7 @@ import {
   SearchOptions,
 } from '../types';
 import { DatabaseConnection } from './index';
-import { logDebug } from '../errors';
+import { logDebug, logWarn } from '../errors';
 
 export class QueryBuilder {
   private db: DatabaseConnection;
@@ -194,15 +194,20 @@ export class QueryBuilder {
   deleteNodesByFile(filePath: string): void {
     const ids = this.db.all<{ id: string }>('SELECT id FROM nodes WHERE file_path = ?', [filePath]);
     if (ids.length === 0) return;
-    const placeholders = ids.map(() => '?').join(',');
-    this.db.run(`DELETE FROM edges WHERE source IN (${placeholders}) OR target IN (${placeholders})`, [
-      ...ids.map((r) => r.id),
-      ...ids.map((r) => r.id),
-    ]);
-    try {
-      this.db.run(`DELETE FROM node_embeddings WHERE node_id IN (${placeholders})`, ids.map((r) => r.id));
-    } catch {
-      // node_embeddings may not exist in old schemas
+    // SQLite default variable limit is 999; batch deletions to stay safe
+    const SQLITE_LIMIT = 999;
+    for (let i = 0; i < ids.length; i += SQLITE_LIMIT) {
+      const batch = ids.slice(i, i + SQLITE_LIMIT);
+      const placeholders = batch.map(() => '?').join(',');
+      this.db.run(`DELETE FROM edges WHERE source IN (${placeholders}) OR target IN (${placeholders})`, [
+        ...batch.map((r) => r.id),
+        ...batch.map((r) => r.id),
+      ]);
+      try {
+        this.db.run(`DELETE FROM node_embeddings WHERE node_id IN (${placeholders})`, batch.map((r) => r.id));
+      } catch {
+        // node_embeddings may not exist in old schemas
+      }
     }
     this.db.run('DELETE FROM nodes WHERE file_path = ?', [filePath]);
   }
@@ -449,13 +454,22 @@ export class QueryBuilder {
       this.dfsCycles(start, adj, new Set(), [], cycles, 0);
     }
 
-    // Deduplicate cycles (same set of files in different order)
+    // Deduplicate cycles that are the same cycle starting at different nodes,
+    // but preserve genuinely different cycles (different order = different cycle)
     const seen = new Set<string>();
     const unique: string[][] = [];
     for (const c of cycles) {
-      const key = [...c].sort().join('|');
-      if (!seen.has(key)) {
-        seen.add(key);
+      // Remove the repeated start node at the end for rotation comparison
+      const path = c.slice(0, -1);
+      if (path.length === 0) continue;
+      // Find lexicographically smallest rotation as canonical key
+      let minRotation = path.join('|');
+      for (let i = 1; i < path.length; i++) {
+        const rotated = [...path.slice(i), ...path.slice(0, i)].join('|');
+        if (rotated < minRotation) minRotation = rotated;
+      }
+      if (!seen.has(minRotation)) {
+        seen.add(minRotation);
         unique.push(c);
       }
     }
@@ -565,21 +579,25 @@ export class QueryBuilder {
         'INSERT OR REPLACE INTO node_embeddings (node_id, embedding) VALUES (?, ?)',
         [nodeId, embedding]
       );
-    } catch {
-      // vec0 table may not exist in old schemas
+    } catch (err) {
+      logWarn(`upsertEmbedding failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   deleteEmbeddingsByNodeIds(nodeIds: string[]): void {
     if (nodeIds.length === 0) return;
-    const placeholders = nodeIds.map(() => '?').join(',');
-    try {
-      this.db.run(
-        `DELETE FROM node_embeddings WHERE node_id IN (${placeholders})`,
-        nodeIds
-      );
-    } catch {
-      // vec0 table may not exist in old schemas
+    const SQLITE_LIMIT = 999;
+    for (let i = 0; i < nodeIds.length; i += SQLITE_LIMIT) {
+      const batch = nodeIds.slice(i, i + SQLITE_LIMIT);
+      const placeholders = batch.map(() => '?').join(',');
+      try {
+        this.db.run(
+          `DELETE FROM node_embeddings WHERE node_id IN (${placeholders})`,
+          batch
+        );
+      } catch {
+        // vec0 table may not exist in old schemas
+      }
     }
   }
 
@@ -617,7 +635,8 @@ export class QueryBuilder {
     try {
       const rows = this.db.all<RawNode & { distance: number }>(sql, params);
       return rows.map((row) => ({ node: this.rowToNode(row), distance: row.distance }));
-    } catch {
+    } catch (err) {
+      logWarn(`searchNodesSemantic failed: ${err instanceof Error ? err.message : String(err)}`);
       return [];
     }
   }
@@ -629,8 +648,8 @@ export class QueryBuilder {
     this.db.exec('DELETE FROM unresolved_refs');
     try {
       this.db.exec('DELETE FROM node_embeddings');
-    } catch {
-      // vec0 table may not exist in old schemas
+    } catch (err) {
+      logWarn(`clear failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

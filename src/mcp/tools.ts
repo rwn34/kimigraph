@@ -3,12 +3,16 @@
  */
 
 import { KimiGraph } from '../index';
+import { findNearestKimiGraphRoot } from '../directory';
+import { logError } from '../errors';
 
 
 const MAX_OUTPUT = 15000;
 
-function truncate(s: string): string {
-  return s.length > MAX_OUTPUT ? s.slice(0, MAX_OUTPUT) + '\n...[truncated]' : s;
+function truncate(s: string, wasTruncatedRef?: { value: boolean }): string {
+  if (s.length <= MAX_OUTPUT) return s;
+  if (wasTruncatedRef) wasTruncatedRef.value = true;
+  return s.slice(0, MAX_OUTPUT) + '\n...[truncated]';
 }
 
 function clampLimit(value: number | undefined, defaultValue: number): number {
@@ -139,7 +143,7 @@ export const tools: ToolDefinition[] = [
   },
   {
     name: 'kimigraph_dead_code',
-    description: 'Find potentially dead code — unexported functions, methods, and classes that are never called or referenced.',
+    description: 'Find potentially unused code — unexported functions/methods/classes with no static references. May include false positives (barrel exports, dynamic dispatch, framework callbacks).',
     inputSchema: {
       type: 'object',
       properties: {
@@ -178,7 +182,7 @@ export const tools: ToolDefinition[] = [
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Natural language question or topic to explore, e.g. "How does authentication work?" or "Trace the request flow"' },
-        budget: { type: 'string', description: 'Context budget: small (~10 symbols), medium (~20 symbols), large (~40 symbols). Use small for targeted questions, large for broad architecture questions.', enum: ['small', 'medium', 'large'], default: 'medium' },
+        budget: { type: 'string', description: 'Context budget: small (~5 symbols), medium (~15 symbols), large (~30 symbols). Use small for targeted questions, large for broad architecture questions.', enum: ['small', 'medium', 'large'], default: 'medium' },
         projectPath: { type: 'string', description: 'Project root path (optional)' },
       },
       required: ['query'],
@@ -230,7 +234,30 @@ export class ToolHandler {
   }
 
   private async getConnection(projectPath?: string): Promise<KimiGraph | null> {
-    if (!projectPath) return this.defaultKg;
+    if (!projectPath) {
+      if (this.defaultKg) return this.defaultKg;
+      // Auto-discover nearest KimiGraph root from cwd
+      const nearest = findNearestKimiGraphRoot(process.cwd());
+      if (nearest) {
+        const resolved = require('path').resolve(nearest);
+        if (this.connections.has(resolved)) {
+          this.lastAccessed.set(resolved, Date.now());
+          return this.connections.get(resolved)!;
+        }
+        try {
+          this.evictOldestIfNeeded();
+          const kg = await KimiGraph.open(resolved);
+          kg.watch();
+          this.connections.set(resolved, kg);
+          this.lastAccessed.set(resolved, Date.now());
+          return kg;
+        } catch (err) {
+          logError(`Failed to open KimiGraph at ${resolved}: ${err instanceof Error ? err.message : String(err)}`);
+          return null;
+        }
+      }
+      return null;
+    }
     const resolved = require('path').resolve(projectPath);
     if (this.connections.has(resolved)) {
       this.lastAccessed.set(resolved, Date.now());
@@ -243,7 +270,8 @@ export class ToolHandler {
       this.connections.set(resolved, kg);
       this.lastAccessed.set(resolved, Date.now());
       return kg;
-    } catch {
+    } catch (err) {
+      logError(`Failed to open KimiGraph at ${resolved}: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
   }
@@ -251,7 +279,13 @@ export class ToolHandler {
   async handle(toolName: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: 'text'; text: string }>; isError?: boolean }> {
     try {
       const text = await this.dispatch(toolName, args);
-      return { content: [{ type: 'text', text: truncate(text) }] };
+      const truncatedRef = { value: false };
+      const truncated = truncate(text, truncatedRef);
+      if (truncatedRef.value) {
+        const warning = '⚠️ Output truncated — some sections were omitted. Use a smaller budget or more specific query.\n\n';
+        return { content: [{ type: 'text', text: warning + truncated }] };
+      }
+      return { content: [{ type: 'text', text: truncated }] };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };

@@ -24,14 +24,14 @@ program
 program
   .command('init [project-path]')
   .description('Initialize KimiGraph in a project')
-  .option('-i, --index', 'Run initial indexing after init')
+  .option('--no-index', 'Skip initial indexing after init')
   .action(async (projectPath: string = '.', options: { index?: boolean }) => {
     try {
       const resolved = path.resolve(projectPath);
       const kg = await KimiGraph.init(resolved);
       console.log(`Initialized KimiGraph in ${resolved}/.kimigraph/`);
 
-      if (options.index) {
+      if (options.index !== false) {
         console.log('Indexing...');
         const result = await kg.indexAll((p) => {
           if (p.phase === 'parsing') {

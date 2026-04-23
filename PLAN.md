@@ -28,7 +28,7 @@ We are building a **local-first code knowledge graph for Kimi Code CLI**.
 ### What We Take From KiroGraph (One Thing Only)
 
 **The hook-based sync pattern:** "File saved → mark dirty → sync when agent stops."  
-This is smarter than CodeGraph's passive `cg.watch()` because it syncs at the RIGHT time — when the agent is done working, not on every keystroke.
+*Current implementation:* `fs.watch` with 2-second debounce + pre-query dirty check. There is no hook into Kimi's turn lifecycle; sync fires after save-quiet, not at agent-stop. This is a pragmatic approximation of the pattern, not a full implementation.
 
 ### What We Reject From Both
 
@@ -53,7 +53,7 @@ This is smarter than CodeGraph's passive `cg.watch()` because it syncs at the RI
 | **File watcher** | `cg.watch()` passive watcher | `fs.watch` auto-sync + pre-query sync | **✅ Shipped** |
 | **Agent instructions** | Auto-injected `CLAUDE.md` | `.kimi/AGENTS.md` + `.kimi/instructions.md` | **✅ Shipped** |
 | **MCP tools** | 8 (incl. `files`, `status`, `explore`) | 8 (incl. `explore`) | **✅ Shipped** |
-| **Benchmarks** | 92% fewer calls, 71% faster | 77% reduction, 4 repos | **✅ Proven** |
+| **Benchmarks** | 92% fewer calls, 71% faster | Measured by npm run benchmark — see benchmark-report.json | **✅ Shipped** |
 | **Embeddings** | No | nomic-embed-text-v1.5 + sqlite-vec | **✅ Shipped** |
 
 ### vs. KiroGraph
@@ -66,7 +66,7 @@ This is smarter than CodeGraph's passive `cg.watch()` because it syncs at the RI
 | **Node kinds** | 24 | 9 | **Won't chase. 12–15 is our target.** |
 | **Dashboard** | Yes | No | **Rejected** |
 
-**Verdict: We are ~65% of CodeGraph, ~85% of KiroGraph.** Core features shipped: structural graph, semantic search, auto-sync, 9 languages, 14 node kinds, 77% tool-call reduction proven.
+**Verdict: We are ~65% of CodeGraph, ~85% of KiroGraph.** Core features shipped: structural graph, semantic search, auto-sync, 9 languages, 14 node kinds.
 
 ---
 
@@ -79,6 +79,7 @@ Structural graph + MCP exposure. The agent CAN query the graph, but it still nee
 - [x] SQLite + FTS5 schema
 - [x] TS/JS/Python extraction
 - [x] Graph traversal (callers, callees, impact, paths, cycles, dead code)
+  - *Note:* `kimigraph_cycles` and `kimigraph_dead_code` are **experimental/advisory** tools. Cycle detection only sees static edges (not runtime/event-driven cycles). Dead-code detection flags symbols with zero incoming edges but produces false positives for barrel exports, dynamic dispatch, and framework-driven entry points. Use judgment.
 - [x] Reference resolution (cross-file imports)
 - [x] MCP server with 7 tools
 - [x] Context builder (`buildContext`)

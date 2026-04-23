@@ -1,124 +1,81 @@
 /**
- * KimiGraph benchmark harness.
+ * KimiGraph performance profiler.
  *
- * VALIDATION.md criteria 2.5.1–2.5.3:
- *   - Simulate agent exploration WITH graph (kimigraph_explore) vs WITHOUT graph (file reads + grep)
- *   - Count tool calls per approach
- *   - Compare wall-clock time
- *   - Measure zero-file-read rate
- *   - VERIFY that explore actually returns the files needed to answer the question
+ * Measures what can be objectively measured:
+ *   - Query latency (actual wall-clock buildContext time)
+ *   - Indexing time (structural vs with embeddings)
+ *   - File coverage (how many unique files explore returns per question)
+ *   - Search strategy contribution (which tier found results)
  *
- * METHODOLOGY (honest simulation):
- *   1. Ground truth: use the graph's own search (exact + FTS + LIKE, generous limit)
- *      to find ALL symbols relevant to the question. Their files = "needed files".
- *   2. Baseline (no graph): agent must Glob (1), Grep (1), then ReadFile each
- *      needed file individually. Tool calls = 2 + neededFiles.length.
- *   3. With graph: one kimigraph_explore call. We check its recall against
- *      ground truth — if explore misses needed files, the simulation flags it.
- *   4. Overhead: per-tool-call latency modeled by BENCHMARK_TOOL_OVERHEAD_MS
- *      (default 150ms). This is NOT measured — it models real agent round-trip.
+ * LIMITATION: This does NOT measure tool-call reduction or duration reduction
+ * vs. a real agent without the graph. Those require real agent integration testing
+ * and cannot be automated in a script. The numbers here are a performance profile,
+ * not a validation of VALIDATION.md 2.5.1–2.5.3.
  *
- * Output: benchmark-report.json
+ * Usage:
+ *   npx tsx scripts/benchmark.ts                    # Run on default fixtures
+ *   npx tsx scripts/benchmark.ts <project-path>...  # Run on specified projects
  */
 
 import * as path from 'path';
 import * as fs from 'fs';
 import { KimiGraph } from '../src/index';
+import { QueryBuilder } from '../src/db/queries';
+import { getEmbedder } from '../src/embeddings';
 
-interface QuestionResult {
+interface QueryResult {
   query: string;
-  neededFiles: string[];
-  exploreFiles: string[];
-  sufficiency: {
-    recall: number; // fraction of needed files that explore returned
-    precision: number; // fraction of explore files that were needed
-  };
-  withGraph: {
-    toolCalls: number;
-    durationMs: number;
-    fileReads: number;
-  };
-  withoutGraph: {
-    toolCalls: number;
-    durationMs: number;
-    fileReads: number;
-  };
+  latencyMs: number;
+  entryPoints: number;
+  relatedNodes: number;
+  filesCovered: number;
+  strategyBreakdown: Record<string, number>;
 }
 
-interface RepoResult {
-  repo: string;
+interface BenchmarkResult {
+  project: string;
   totalFiles: number;
-  questions: QuestionResult[];
+  structuralIndexMs: number;
+  embeddingIndexMs: number | null;
+  queries: QueryResult[];
+  avgQueryLatencyMs: number;
+  durationMs: number;
 }
 
-interface BenchmarkReport {
-  meta: {
-    toolOverheadMs: number;
-    note: string;
-  };
-  baseline: {
-    avgToolCalls: number;
-    avgDurationMs: number;
-    avgFileReads: number;
-  };
-  withGraph: {
-    avgToolCalls: number;
-    avgDurationMs: number;
-    avgFileReads: number;
-  };
-  sufficiency: {
-    avgRecall: number;
-    avgPrecision: number;
-    minRecall: number;
-  };
-  reduction: {
-    toolCallsPercent: number;
-    durationPercent: number;
-    zeroFileReadRate: number;
-  };
-  repos: RepoResult[];
-  generatedAt: string;
-}
-
-const REPOS = [
+const DEFAULT_PROJECTS = [
   'benchmark-fixtures/ts-api',
   'benchmark-fixtures/go-cli',
   'benchmark-fixtures/rust-lib',
 ];
 
-const QUESTIONS: Record<string, string[]> = {
+const DEFAULT_QUESTIONS = [
+  'How does the main flow work?',
+  'Trace the data processing',
+  'What is the architecture?',
+];
+
+const PROJECT_QUESTIONS: Record<string, string[]> = {
   'ts-api': [
     'How does authMiddleware verify tokens?',
-    'How does the server handle user requests?',
-    'Trace the password hashing flow',
-    'How is JWT validation implemented?',
-    'What happens when a user logs in?',
+    'How does createUser hash passwords?',
+    'How does startServer route requests?',
   ],
   'go-cli': [
-    'How does the CLI load configuration?',
-    'How does the root command execute?',
-    'Trace the logger initialization',
-    'How does the builder compile targets?',
-    'What is the deployment flow?',
+    'How does Builder build targets?',
+    'How does Deployer run deployment?',
+    'How does config Load settings?',
   ],
   'rust-lib': [
-    'How does the parser tokenize input?',
-    'How does the pipeline process data?',
-    'Trace the validation flow',
-    'How does serialization work?',
-    'How are errors handled?',
+    'How does Pipeline process input?',
+    'How does Parser tokenize strings?',
+    'How does Validator check data?',
   ],
 };
 
-const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.cs']);
-const IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.kimigraph', '.kimi', 'coverage', 'target']);
-
-// Per-tool-call overhead modeling real agent round-trip (LLM + transport + parse).
-// Override: BENCHMARK_TOOL_OVERHEAD_MS=250 npx tsx scripts/benchmark.ts
-const TOOL_CALL_OVERHEAD_MS = parseInt(process.env.BENCHMARK_TOOL_OVERHEAD_MS ?? '150', 10);
-
-function listSourceFiles(dir: string): string[] {
-  const files: string[] = [];
+function countSourceFiles(dir: string): number {
+  const ignoreDirs = new Set(['node_modules', '.git', 'dist', 'build', '.kimigraph', '.kimi', 'coverage', 'target']);
+  const exts = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.cs']);
+  let count = 0;
   function walk(current: string) {
     let entries: fs.Dirent[];
     try {
@@ -127,232 +84,152 @@ function listSourceFiles(dir: string): string[] {
     for (const entry of entries) {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
-        if (!IGNORE_DIRS.has(entry.name)) walk(full);
-      } else if (entry.isFile() && SOURCE_EXTS.has(path.extname(entry.name).toLowerCase())) {
-        files.push(path.relative(dir, full).replace(/\\/g, '/'));
+        if (!ignoreDirs.has(entry.name)) walk(full);
+      } else if (entry.isFile() && exts.has(path.extname(entry.name).toLowerCase())) {
+        count++;
       }
     }
   }
   walk(dir);
-  return files;
+  return count;
 }
 
-function extractKeywords(query: string): string[] {
-  const stopwords = new Set(['how', 'does', 'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare', 'ought', 'used', 'to', 'of', 'in', 'for', 'on', 'with', 'at', 'by', 'from', 'as', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'between', 'under', 'and', 'but', 'or', 'yet', 'so', 'if', 'because', 'although', 'though', 'while', 'where', 'when', 'that', 'which', 'who', 'whom', 'whose', 'what', 'this', 'these', 'those', 'i', 'me', 'my', 'myself', 'we', 'our', 'ours', 'ourselves', 'you', 'your', 'yours', 'yourself', 'yourselves', 'he', 'him', 'his', 'himself', 'she', 'her', 'hers', 'herself', 'it', 'its', 'itself', 'they', 'them', 'their', 'theirs', 'themselves', 'trace', 'flow', 'work', 'handle', 'happens']);
-  return query
-    .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !stopwords.has(w));
-}
+async function benchmarkProject(projectPath: string): Promise<BenchmarkResult> {
+  const absPath = path.resolve(projectPath);
+  const projectName = path.basename(absPath);
+  const startTime = Date.now();
 
-/** Use the graph itself to find the ground-truth relevant files for a query. */
-async function findGroundTruthFiles(kg: KimiGraph, query: string): Promise<string[]> {
-  const files = new Set<string>();
-  const keywords = extractKeywords(query);
+  const totalFiles = countSourceFiles(absPath);
 
-  // Exact name match
-  for (const kw of keywords) {
+  // Structural index only
+  const kgStruct = await KimiGraph.init(absPath, { embedSymbols: false });
+  const t0 = Date.now();
+  await kgStruct.indexAll();
+  const structuralIndexMs = Date.now() - t0;
+
+  // Embedding-enhanced index
+  let embeddingIndexMs: number | null = null;
+  const kgEmbed = await KimiGraph.init(absPath, { embedSymbols: true });
+  const t1 = Date.now();
+  await kgEmbed.indexAll();
+  embeddingIndexMs = Date.now() - t1;
+
+  kgStruct.close();
+
+  const queries: QueryResult[] = [];
+  const questionsToAsk = PROJECT_QUESTIONS[projectName] || DEFAULT_QUESTIONS;
+
+  for (const query of questionsToAsk) {
+    const qStart = Date.now();
+    const ctx = await kgEmbed.buildContext(query, { maxNodes: 20, includeCode: true });
+    const latencyMs = Date.now() - qStart;
+
+    const coveredFiles = new Set<string>();
+    for (const node of [...ctx.entryPoints, ...ctx.relatedNodes]) {
+      coveredFiles.add(node.filePath);
+    }
+
+    // Determine which strategies contributed by re-running them individually
+    const db = (kgEmbed as any).db;
+    const queriesObj = (kgEmbed as any).queries as QueryBuilder;
+    const strategyBreakdown: Record<string, number> = {};
+
     try {
-      const exact = await kg.searchNodes(kw, { limit: 20 });
-      for (const r of exact) files.add(r.node.filePath);
-    } catch { /* ignore */ }
-  }
+      strategyBreakdown.exact = queriesObj.findNodesByExactName(query.split(/\s+/)[0] ?? query, { limit: 20 }).length;
+    } catch { strategyBreakdown.exact = 0; }
 
-  // FTS
-  try {
-    const fts = await kg.searchNodes(query, { limit: 20 });
-    for (const r of fts) files.add(r.node.filePath);
-  } catch { /* ignore */ }
-
-  // LIKE fallback
-  if (keywords.length > 0) {
     try {
-      const like = await kg.searchNodes(keywords[0], { limit: 20 });
-      for (const r of like) files.add(r.node.filePath);
-    } catch { /* ignore */ }
-  }
+      strategyBreakdown.fts = queriesObj.searchNodesFTS(query, { limit: 20 }).length;
+    } catch { strategyBreakdown.fts = 0; }
 
-  return [...files];
-}
+    if (db.hasVecExtension()) {
+      try {
+        const embedder = getEmbedder({ model: 'nomic-ai/nomic-embed-text-v1.5', batchSize: 8 });
+        const vec = await embedder.embedOne(query);
+        strategyBreakdown.semantic = queriesObj.searchNodesSemantic(vec, { limit: 20 }).length;
+      } catch { strategyBreakdown.semantic = 0; }
+    }
 
-function simulateBaseline(neededFiles: string[]): { toolCalls: number; durationMs: number; fileReads: number } {
-  // 1 Glob + 1 Grep + 1 ReadFile per needed file
-  const toolCalls = 2 + neededFiles.length;
-  const fileReads = neededFiles.length;
-  const rawDuration = neededFiles.length * 2; // ~2ms per local file read
-  const durationMs = rawDuration + toolCalls * TOOL_CALL_OVERHEAD_MS;
-  return { toolCalls, durationMs, fileReads };
-}
+    try {
+      strategyBreakdown.like = queriesObj.searchNodesLike(query.split(/\s+/)[0] ?? query, { limit: 20 }).length;
+    } catch { strategyBreakdown.like = 0; }
 
-async function benchmarkRepo(repoPath: string): Promise<RepoResult> {
-  const absPath = path.resolve(repoPath);
-  const repoName = path.basename(absPath);
-  const sourceFiles = listSourceFiles(absPath);
-
-  const kg = await KimiGraph.open(absPath);
-
-  const questions = QUESTIONS[repoName] || ['How does this project work?'];
-  const results: QuestionResult[] = [];
-
-  for (const query of questions) {
-    // Ground truth: what files does the graph itself say are relevant?
-    const neededFiles = await findGroundTruthFiles(kg, query);
-
-    // WITH graph: one explore call
-    const wgStart = Date.now();
-    const ctx = await kg.buildContext(query, { maxNodes: 20, includeCode: true });
-    const wgRawDuration = Date.now() - wgStart;
-
-    const exploreFiles = [...new Set([...ctx.entryPoints, ...ctx.relatedNodes].map((n) => n.filePath))];
-
-    const intersection = exploreFiles.filter((f) => neededFiles.includes(f));
-    const recall = neededFiles.length > 0 ? intersection.length / neededFiles.length : 1;
-    const precision = exploreFiles.length > 0 ? intersection.length / exploreFiles.length : 1;
-
-    const wgDuration = wgRawDuration + 1 * TOOL_CALL_OVERHEAD_MS;
-    const baseline = simulateBaseline(neededFiles);
-
-    results.push({
+    queries.push({
       query,
-      neededFiles,
-      exploreFiles,
-      sufficiency: { recall, precision },
-      withGraph: {
-        toolCalls: 1,
-        durationMs: wgDuration,
-        fileReads: 0,
-      },
-      withoutGraph: baseline,
+      latencyMs,
+      entryPoints: ctx.entryPoints.length,
+      relatedNodes: ctx.relatedNodes.length,
+      filesCovered: coveredFiles.size,
+      strategyBreakdown,
     });
   }
 
-  kg.close();
+  kgEmbed.close();
 
-  return { repo: repoName, totalFiles: sourceFiles.length, questions: results };
+  const avgQueryLatencyMs = queries.reduce((s, q) => s + q.latencyMs, 0) / Math.max(1, queries.length);
+
+  return {
+    project: projectName,
+    totalFiles,
+    structuralIndexMs,
+    embeddingIndexMs,
+    queries,
+    avgQueryLatencyMs,
+    durationMs: Date.now() - startTime,
+  };
 }
 
 async function main() {
-  const repoResults: RepoResult[] = [];
+  let projects = process.argv.slice(2);
+  if (projects.length === 0) {
+    projects = DEFAULT_PROJECTS;
+  }
 
-  for (const repo of REPOS) {
+  const results: BenchmarkResult[] = [];
+
+  for (const project of projects) {
     try {
-      console.log(`Benchmarking ${repo}...`);
-      const result = await benchmarkRepo(repo);
-      repoResults.push(result);
+      console.log(`Benchmarking ${project}...`);
+      const result = await benchmarkProject(project);
+      results.push(result);
     } catch (err) {
-      console.error(`Failed to benchmark ${repo}:`, err);
+      console.error(`Failed to benchmark ${project}:`, err);
     }
   }
 
-  let totalQuestions = 0;
-  let totalBaselineToolCalls = 0;
-  let totalBaselineDuration = 0;
-  let totalBaselineFileReads = 0;
-  let totalWithGraphToolCalls = 0;
-  let totalWithGraphDuration = 0;
-  let totalRecall = 0;
-  let totalPrecision = 0;
-  let minRecall = 1;
-  let zeroFileReadCount = 0;
+  console.log('\n=== KimiGraph Performance Profile ===\n');
 
-  for (const repo of repoResults) {
-    for (const q of repo.questions) {
-      totalQuestions++;
-      totalBaselineToolCalls += q.withoutGraph.toolCalls;
-      totalBaselineDuration += q.withoutGraph.durationMs;
-      totalBaselineFileReads += q.withoutGraph.fileReads;
-      totalWithGraphToolCalls += q.withGraph.toolCalls;
-      totalWithGraphDuration += q.withGraph.durationMs;
-      totalRecall += q.sufficiency.recall;
-      totalPrecision += q.sufficiency.precision;
-      minRecall = Math.min(minRecall, q.sufficiency.recall);
-      if (q.withGraph.fileReads === 0 && q.withGraph.toolCalls === 1) zeroFileReadCount++;
+  for (const r of results) {
+    console.log(`Project: ${r.project}`);
+    console.log(`  Total source files: ${r.totalFiles}`);
+    console.log(`  Structural index: ${r.structuralIndexMs}ms`);
+    console.log(`  Embedding index: ${r.embeddingIndexMs ?? 'N/A'}ms`);
+    console.log(`  Embedding overhead: ${r.embeddingIndexMs ? `${(r.embeddingIndexMs / r.structuralIndexMs).toFixed(2)}×` : 'N/A'}`);
+    console.log(`  Avg query latency: ${r.avgQueryLatencyMs.toFixed(0)}ms`);
+    console.log(`  Questions:`);
+    for (const q of r.queries) {
+      const strategies = Object.entries(q.strategyBreakdown)
+        .filter(([, v]) => v > 0)
+        .map(([k, v]) => `${k}=${v}`)
+        .join(', ');
+      console.log(`    - "${q.query}"`);
+      console.log(`      → ${q.latencyMs}ms, ${q.entryPoints}+${q.relatedNodes} nodes, ${q.filesCovered} files`);
+      console.log(`        strategies: ${strategies || 'none'}`);
     }
+    console.log();
   }
 
-  const baselineAvgToolCalls = totalQuestions ? totalBaselineToolCalls / totalQuestions : 0;
-  const baselineAvgDuration = totalQuestions ? totalBaselineDuration / totalQuestions : 0;
-  const baselineAvgFileReads = totalQuestions ? totalBaselineFileReads / totalQuestions : 0;
-  const withGraphAvgToolCalls = totalQuestions ? totalWithGraphToolCalls / totalQuestions : 0;
-  const withGraphAvgDuration = totalQuestions ? totalWithGraphDuration / totalQuestions : 0;
-
-  const toolCallsReduction = baselineAvgToolCalls > 0
-    ? ((baselineAvgToolCalls - withGraphAvgToolCalls) / baselineAvgToolCalls) * 100
-    : 0;
-  const durationReduction = baselineAvgDuration > 0
-    ? ((baselineAvgDuration - withGraphAvgDuration) / baselineAvgDuration) * 100
-    : 0;
-  const zeroFileReadRate = totalQuestions ? (zeroFileReadCount / totalQuestions) * 100 : 0;
-  const avgRecall = totalQuestions ? totalRecall / totalQuestions : 0;
-  const avgPrecision = totalQuestions ? totalPrecision / totalQuestions : 0;
-
-  const report: BenchmarkReport = {
-    meta: {
-      toolOverheadMs: TOOL_CALL_OVERHEAD_MS,
-      note: 'Baseline is grounded in graph-determined relevance (neededFiles). ' +
-            'Overhead models agent round-trip; override with BENCHMARK_TOOL_OVERHEAD_MS.',
-    },
-    baseline: {
-      avgToolCalls: Math.round(baselineAvgToolCalls * 10) / 10,
-      avgDurationMs: Math.round(baselineAvgDuration),
-      avgFileReads: Math.round(baselineAvgFileReads * 10) / 10,
-    },
-    withGraph: {
-      avgToolCalls: Math.round(withGraphAvgToolCalls * 10) / 10,
-      avgDurationMs: Math.round(withGraphAvgDuration),
-      avgFileReads: 0,
-    },
-    sufficiency: {
-      avgRecall: Math.round(avgRecall * 100),
-      avgPrecision: Math.round(avgPrecision * 100),
-      minRecall: Math.round(minRecall * 100),
-    },
-    reduction: {
-      toolCallsPercent: Math.round(toolCallsReduction),
-      durationPercent: Math.round(durationReduction),
-      zeroFileReadRate: Math.round(zeroFileReadRate),
-    },
-    repos: repoResults,
-    generatedAt: new Date().toISOString(),
-  };
-
-  console.log('\n=== KimiGraph Benchmark Results ===\n');
-  console.log(`Questions asked: ${totalQuestions} across ${repoResults.length} repos`);
-  console.log(`Tool overhead: ${TOOL_CALL_OVERHEAD_MS}ms per call (modeled, not measured)`);
-  console.log();
-  console.log(`Baseline (no graph):`);
-  console.log(`  Avg tool calls per question: ${report.baseline.avgToolCalls}`);
-  console.log(`  Avg duration per question:   ${report.baseline.avgDurationMs}ms`);
-  console.log(`  Avg file reads per question: ${report.baseline.avgFileReads}`);
-  console.log();
-  console.log(`With KimiGraph:`);
-  console.log(`  Avg tool calls per question: ${report.withGraph.avgToolCalls}`);
-  console.log(`  Avg duration per question:   ${report.withGraph.avgDurationMs}ms`);
-  console.log();
-  console.log(`Sufficiency (did explore return the needed files?):`);
-  console.log(`  Avg recall:    ${report.sufficiency.avgRecall}%`);
-  console.log(`  Avg precision: ${report.sufficiency.avgPrecision}%`);
-  console.log(`  Min recall:    ${report.sufficiency.minRecall}%`);
-  console.log();
-  console.log(`Reduction:`);
-  console.log(`  Tool calls: ${report.reduction.toolCallsPercent}%`);
-  console.log(`  Duration:   ${report.reduction.durationPercent}%`);
-  console.log(`  Zero-file-read rate: ${report.reduction.zeroFileReadRate}%`);
+  const avgLatency = results.reduce((s, r) => s + r.avgQueryLatencyMs, 0) / Math.max(1, results.length);
+  console.log(`Average query latency: ${avgLatency.toFixed(0)}ms`);
   console.log();
 
-  const tcPass = report.reduction.toolCallsPercent >= 70;
-  const durPass = report.reduction.durationPercent >= 50;
-  const zfrPass = report.reduction.zeroFileReadRate >= 60;
-  const recallPass = report.sufficiency.avgRecall >= 70;
-  console.log(`VALIDATION 2.5.1 (≥70% tool-call reduction): ${tcPass ? '✅ PASS' : '❌ FAIL'}`);
-  console.log(`VALIDATION 2.5.2 (≥50% duration reduction):   ${durPass ? '✅ PASS' : '❌ FAIL'}`);
-  console.log(`VALIDATION 2.5.3 (≥60% zero-file-read rate):  ${zfrPass ? '✅ PASS' : '❌ FAIL'}`);
-  console.log(`Sufficiency (≥70% avg recall):                ${recallPass ? '✅ PASS' : '❌ FAIL'}`);
+  console.log('NOTE: This profile measures query latency and file coverage.');
+  console.log('Tool-call reduction vs. baseline agent behavior requires real');
+  console.log('agent integration testing and cannot be automated in a script.');
   console.log();
 
   const reportPath = path.resolve('benchmark-report.json');
-  fs.writeFileSync(reportPath, JSON.stringify(report, null, 2));
+  fs.writeFileSync(reportPath, JSON.stringify({ results, avgLatency, generatedAt: new Date().toISOString() }, null, 2));
   console.log(`Report written to ${reportPath}`);
 }
 

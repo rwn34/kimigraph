@@ -75,7 +75,9 @@
 |---|-----------|------|----------------|
 | 2.3.1 | Auto-detect on init | `kimigraph init` in a test repo | Creates `.kimigraph/` AND writes `.kimi/instructions.md` (or equivalent hook) telling Kimi to use graph tools |
 | 2.3.2 | Agent uses `explore` first | Ask Kimi: "How does the database layer work?" in a repo with `.kimigraph/` | First tool call is `kimigraph_explore` or `kimigraph_context`. NOT `ReadFile`, NOT `Grep`. |
+| 2.3.2a | **Manual validation note** | — | This criterion requires observing real agent behavior and cannot be automated in unit tests. |
 | 2.3.3 | Agent avoids grep for symbol lookup | Ask Kimi: "Find the function that handles auth" | Uses `kimigraph_search` or `kimigraph_explore`. NOT `Grep`. |
+| 2.3.3a | **Manual validation note** | — | This criterion requires observing real agent behavior and cannot be automated in unit tests. |
 | 2.3.4 | Graceful fallback | Ask Kimi a question in a repo WITHOUT `.kimigraph/` | Agent falls back to normal file reads. No errors. |
 
 ### 3.4 Language Expansion: Go, Rust, Java
@@ -179,7 +181,7 @@ npm pack --dry-run 2>&1 | tail -5
 | Phase | Date | Validator | All Criteria Pass? |
 |-------|------|-----------|-------------------|
 | Phase 1 | 2026-04-21 | Kimi | ✅ Yes |
-| Phase 2 | — | — | 🔄 In progress — benchmarks rewritten, awaiting re-validation |
+| Phase 2 | — | — | 🔄 In progress — reliability fixes complete, awaiting manual validation of agent behavior criteria |
 | Phase 3 | — | — | ⏸️ Blocked until Phase 2 passes |
 
 ---

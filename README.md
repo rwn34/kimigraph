@@ -328,6 +328,13 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Python export detection** | All Python symbols marked `isExported: false` | ✅ **Fixed** — names without leading underscore are `isExported: true` (Python convention) |
 | **Cross-file inheritance** | `extends`/`implements` only resolved within the same file | ✅ **Fixed** — unresolved parent names queued as refs and resolved project-wide by `ReferenceResolver` |
 | **findPath unexposed** | `GraphTraverser.findPath()` existed but had no MCP tool | ✅ **Fixed** — exposed as `kimigraph_path` MCP tool |
+| **AGENTS.md enforcement** | Agents may ignore the `.kimi/AGENTS.md` file — there is no programmatic hook to force tool selection | ⚠️ **Known limitation** — effectiveness depends on the LLM reading and respecting the markdown instructions; manual validation required |
+| **Agent-stop sync** | PLAN describes "sync at agent stop" but implementation uses file-watcher debounce (2s) + pre-query check; no Kimi turn-lifecycle hook exists | ⚠️ **Known limitation** — sync fires after save-quiet, not at turn boundary |
+| **Semantic recall ceiling** | `minRecall` (0.3) + cosine-top-k = ~70–80% max recall on hard queries; `strict` preset may miss relevant symbols | ⚠️ **Known limitation** — consider `broad` preset for discovery tasks |
+| **Resolution rebuild cost** | `rebuildGraph()` re-parses every file; incremental sync only parses changed files | ⚠️ **Known limitation** — full rebuild is O(files); use incremental sync for day-to-day |
+| **Embedding staleness** | Semantic embeddings are computed once on indexing; editing a function body without changing its signature does not recompute embeddings | ⚠️ **Known limitation** — semantic search may return stale embeddings for heavily edited code |
+| **`kimigraph_cycles`** | Circular dependency detection works for static `import`/`extends`/`implements` edges only; dynamic/runtime cycles (e.g., event-driven, lazy `require`) are invisible | ⚠️ **Known limitation** — treat as advisory, not definitive |
+| **`kimigraph_dead_code`** | Dead-code detection flags symbols with zero incoming edges, but barrel exports, dynamic dispatch, and framework-driven entry points (e.g., React components, HTTP handlers) create false positives | ⚠️ **Known limitation** — treat as advisory, not definitive; always verify before removing |
 
 ### Performance notes
 

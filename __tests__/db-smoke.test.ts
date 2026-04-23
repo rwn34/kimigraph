@@ -83,7 +83,7 @@ describe('Agent Instructions', () => {
 
     const content = fs.readFileSync(agentsPath, 'utf8');
     expect(content).toContain('kimigraph_explore');
-    expect(content).toContain('MANDATORY');
+    expect(content).toContain('guidelines');
 
     // Fallback instructions.md also written
     const fallbackPath = path.join(FIXTURE_DIR, '.kimi', 'instructions.md');

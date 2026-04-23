@@ -43,6 +43,7 @@ export class GraphWatcher {
   private excludePatterns: string[];
   private watcher: fs.FSWatcher | null = null;
   private debounceTimer: NodeJS.Timeout | null = null;
+  private pollTimer: NodeJS.Timeout | null = null;
   private dirty = false;
 
   constructor(
@@ -82,8 +83,8 @@ export class GraphWatcher {
     } catch (err) {
       // fs.watch recursive may not work on all platforms (Linux older kernels, network FS)
       logWarn('File watcher failed to start:', err instanceof Error ? err.message : String(err));
-      logWarn('Falling back to polling mode — graph will be treated as dirty on each query.');
-      this.dirty = true;
+      logWarn('Falling back to polling mode — scanning file mtimes every 5s.');
+      this.startPolling();
     }
   }
 
@@ -93,11 +94,62 @@ export class GraphWatcher {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = null;
     }
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     if (this.watcher) {
       this.watcher.close();
       this.watcher = null;
     }
     this.dirty = false;
+  }
+
+  private startPolling(): void {
+    const snapshot = new Map<string, number>();
+    this.scanFiles(snapshot);
+    this.pollTimer = setInterval(() => {
+      const current = new Map<string, number>();
+      this.scanFiles(current);
+      let changed = false;
+      for (const [file, mtime] of current) {
+        if (!snapshot.has(file) || snapshot.get(file) !== mtime) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed && snapshot.size !== current.size) {
+        changed = true;
+      }
+      if (changed) {
+        this.dirty = true;
+        this.scanFiles(snapshot); // update snapshot
+      }
+    }, 5000);
+  }
+
+  private scanFiles(out: Map<string, number>): void {
+    const root = this.projectRoot;
+    function walk(dir: string) {
+      let entries: fs.Dirent[];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch { return; }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (!['node_modules', '.git', 'dist', 'build', '.kimigraph', 'target'].includes(entry.name)) {
+            walk(full);
+          }
+        } else if (entry.isFile() && WATCH_EXTENSIONS.has(path.extname(entry.name).toLowerCase())) {
+          try {
+            const stat = fs.statSync(full);
+            out.set(path.relative(root, full).replace(/\\/g, '/'), stat.mtimeMs);
+          } catch { /* ignore */ }
+        }
+      }
+    }
+    walk(root);
   }
 
   /** Whether the graph is stale and needs sync. */
