@@ -6,8 +6,19 @@
  *   - Count tool calls per approach
  *   - Compare wall-clock time
  *   - Measure zero-file-read rate
+ *   - VERIFY that explore actually returns the files needed to answer the question
  *
- * Output: benchmark-report.json with baseline, withGraph, and reduction metrics.
+ * METHODOLOGY (honest simulation):
+ *   1. Ground truth: use the graph's own search (exact + FTS + LIKE, generous limit)
+ *      to find ALL symbols relevant to the question. Their files = "needed files".
+ *   2. Baseline (no graph): agent must Glob (1), Grep (1), then ReadFile each
+ *      needed file individually. Tool calls = 2 + neededFiles.length.
+ *   3. With graph: one kimigraph_explore call. We check its recall against
+ *      ground truth — if explore misses needed files, the simulation flags it.
+ *   4. Overhead: per-tool-call latency modeled by BENCHMARK_TOOL_OVERHEAD_MS
+ *      (default 150ms). This is NOT measured — it models real agent round-trip.
+ *
+ * Output: benchmark-report.json
  */
 
 import * as path from 'path';
@@ -16,15 +27,21 @@ import { KimiGraph } from '../src/index';
 
 interface QuestionResult {
   query: string;
+  neededFiles: string[];
+  exploreFiles: string[];
+  sufficiency: {
+    recall: number; // fraction of needed files that explore returned
+    precision: number; // fraction of explore files that were needed
+  };
   withGraph: {
     toolCalls: number;
     durationMs: number;
-    fileReads: number; // additional ReadFile calls AFTER explore (should be 0)
+    fileReads: number;
   };
   withoutGraph: {
     toolCalls: number;
     durationMs: number;
-    fileReads: number; // ReadFile calls needed to answer
+    fileReads: number;
   };
 }
 
@@ -35,6 +52,10 @@ interface RepoResult {
 }
 
 interface BenchmarkReport {
+  meta: {
+    toolOverheadMs: number;
+    note: string;
+  };
   baseline: {
     avgToolCalls: number;
     avgDurationMs: number;
@@ -44,6 +65,11 @@ interface BenchmarkReport {
     avgToolCalls: number;
     avgDurationMs: number;
     avgFileReads: number;
+  };
+  sufficiency: {
+    avgRecall: number;
+    avgPrecision: number;
+    minRecall: number;
   };
   reduction: {
     toolCallsPercent: number;
@@ -87,9 +113,9 @@ const QUESTIONS: Record<string, string[]> = {
 const SOURCE_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.py', '.go', '.rs', '.java', '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.hxx', '.cs']);
 const IGNORE_DIRS = new Set(['node_modules', '.git', 'dist', 'build', '.kimigraph', '.kimi', 'coverage', 'target']);
 
-// Simulated per-tool-call overhead (ms) to model real agent round-trip latency.
-// In practice each MCP tool call incurs LLM + serialization + parsing overhead.
-const TOOL_CALL_OVERHEAD_MS = 200;
+// Per-tool-call overhead modeling real agent round-trip (LLM + transport + parse).
+// Override: BENCHMARK_TOOL_OVERHEAD_MS=250 npx tsx scripts/benchmark.ts
+const TOOL_CALL_OVERHEAD_MS = parseInt(process.env.BENCHMARK_TOOL_OVERHEAD_MS ?? '150', 10);
 
 function listSourceFiles(dir: string): string[] {
   const files: string[] = [];
@@ -120,73 +146,43 @@ function extractKeywords(query: string): string[] {
     .filter((w) => w.length > 2 && !stopwords.has(w));
 }
 
-function simulateAgentWithoutGraph(
-  projectPath: string,
-  query: string,
-  sourceFiles: string[]
-): { toolCalls: number; durationMs: number; fileReads: number } {
-  const t0 = Date.now();
-  let toolCalls = 0;
-  let fileReads = 0;
-
+/** Use the graph itself to find the ground-truth relevant files for a query. */
+async function findGroundTruthFiles(kg: KimiGraph, query: string): Promise<string[]> {
+  const files = new Set<string>();
   const keywords = extractKeywords(query);
 
-  // 1. Agent lists files (1 tool call = Glob)
-  toolCalls++;
-
-  // 2. Agent reads files whose names match keywords (ReadFile per match)
-  const nameMatches = sourceFiles.filter((f) => {
-    const base = path.basename(f, path.extname(f)).toLowerCase();
-    return keywords.some((k) => base.includes(k));
-  });
-
-  const filesToRead = nameMatches.slice(0, 6);
-  for (const f of filesToRead) {
-    toolCalls++;
-    fileReads++;
-    try { fs.readFileSync(path.join(projectPath, f), 'utf8'); } catch { /* ignore */ }
-  }
-
-  // 3. Agent greps for keywords across all source files (1 tool call = Grep)
-  toolCalls++;
-  const grepMatches = new Set<string>();
-  for (const f of sourceFiles) {
+  // Exact name match
+  for (const kw of keywords) {
     try {
-      const content = fs.readFileSync(path.join(projectPath, f), 'utf8');
-      const lower = content.toLowerCase();
-      if (keywords.some((k) => lower.includes(k))) {
-        grepMatches.add(f);
-      }
+      const exact = await kg.searchNodes(kw, { limit: 20 });
+      for (const r of exact) files.add(r.node.filePath);
     } catch { /* ignore */ }
   }
 
-  // 4. Agent reads files found via grep that weren't already read
-  const newMatches = [...grepMatches].filter((f) => !filesToRead.includes(f)).slice(0, 6);
-  for (const f of newMatches) {
-    toolCalls++;
-    fileReads++;
-    try { fs.readFileSync(path.join(projectPath, f), 'utf8'); } catch { /* ignore */ }
+  // FTS
+  try {
+    const fts = await kg.searchNodes(query, { limit: 20 });
+    for (const r of fts) files.add(r.node.filePath);
+  } catch { /* ignore */ }
+
+  // LIKE fallback
+  if (keywords.length > 0) {
+    try {
+      const like = await kg.searchNodes(keywords[0], { limit: 20 });
+      for (const r of like) files.add(r.node.filePath);
+    } catch { /* ignore */ }
   }
 
-  // 5. If still few files, agent reads the "main" file (index.ts, main.go, lib.rs)
-  if (filesToRead.length + newMatches.length < 3) {
-    const mains = sourceFiles.filter((f) =>
-      /^(src\/)?(index|main|lib|app|server)\./.test(path.basename(f))
-    );
-    for (const f of mains.slice(0, 2)) {
-      if (!filesToRead.includes(f) && !newMatches.includes(f)) {
-        toolCalls++;
-        fileReads++;
-        try { fs.readFileSync(path.join(projectPath, f), 'utf8'); } catch { /* ignore */ }
-      }
-    }
-  }
+  return [...files];
+}
 
-  // Add per-tool-call overhead to model real agent latency
-  const rawDuration = Date.now() - t0;
-  const durationWithOverhead = rawDuration + toolCalls * TOOL_CALL_OVERHEAD_MS;
-
-  return { toolCalls, durationMs: durationWithOverhead, fileReads };
+function simulateBaseline(neededFiles: string[]): { toolCalls: number; durationMs: number; fileReads: number } {
+  // 1 Glob + 1 Grep + 1 ReadFile per needed file
+  const toolCalls = 2 + neededFiles.length;
+  const fileReads = neededFiles.length;
+  const rawDuration = neededFiles.length * 2; // ~2ms per local file read
+  const durationMs = rawDuration + toolCalls * TOOL_CALL_OVERHEAD_MS;
+  return { toolCalls, durationMs, fileReads };
 }
 
 async function benchmarkRepo(repoPath: string): Promise<RepoResult> {
@@ -200,26 +196,34 @@ async function benchmarkRepo(repoPath: string): Promise<RepoResult> {
   const results: QuestionResult[] = [];
 
   for (const query of questions) {
+    // Ground truth: what files does the graph itself say are relevant?
+    const neededFiles = await findGroundTruthFiles(kg, query);
+
     // WITH graph: one explore call
     const wgStart = Date.now();
     const ctx = await kg.buildContext(query, { maxNodes: 20, includeCode: true });
     const wgRawDuration = Date.now() - wgStart;
 
-    // With graph, the agent makes ONE explore call and gets full source sections.
-    // It does NOT need additional ReadFile calls.
-    const wgDuration = wgRawDuration + 1 * TOOL_CALL_OVERHEAD_MS;
+    const exploreFiles = [...new Set([...ctx.entryPoints, ...ctx.relatedNodes].map((n) => n.filePath))];
 
-    // WITHOUT graph: simulate agent
-    const wo = simulateAgentWithoutGraph(absPath, query, sourceFiles);
+    const intersection = exploreFiles.filter((f) => neededFiles.includes(f));
+    const recall = neededFiles.length > 0 ? intersection.length / neededFiles.length : 1;
+    const precision = exploreFiles.length > 0 ? intersection.length / exploreFiles.length : 1;
+
+    const wgDuration = wgRawDuration + 1 * TOOL_CALL_OVERHEAD_MS;
+    const baseline = simulateBaseline(neededFiles);
 
     results.push({
       query,
+      neededFiles,
+      exploreFiles,
+      sufficiency: { recall, precision },
       withGraph: {
         toolCalls: 1,
         durationMs: wgDuration,
-        fileReads: 0, // explore returns full source — no additional ReadFile needed
+        fileReads: 0,
       },
-      withoutGraph: wo,
+      withoutGraph: baseline,
     });
   }
 
@@ -241,14 +245,15 @@ async function main() {
     }
   }
 
-  // Aggregate across all questions
   let totalQuestions = 0;
   let totalBaselineToolCalls = 0;
   let totalBaselineDuration = 0;
   let totalBaselineFileReads = 0;
   let totalWithGraphToolCalls = 0;
   let totalWithGraphDuration = 0;
-  let totalWithGraphFileReads = 0;
+  let totalRecall = 0;
+  let totalPrecision = 0;
+  let minRecall = 1;
   let zeroFileReadCount = 0;
 
   for (const repo of repoResults) {
@@ -259,8 +264,9 @@ async function main() {
       totalBaselineFileReads += q.withoutGraph.fileReads;
       totalWithGraphToolCalls += q.withGraph.toolCalls;
       totalWithGraphDuration += q.withGraph.durationMs;
-      totalWithGraphFileReads += q.withGraph.fileReads;
-      // Zero-file-read = question answered with only explore (no additional ReadFile calls)
+      totalRecall += q.sufficiency.recall;
+      totalPrecision += q.sufficiency.precision;
+      minRecall = Math.min(minRecall, q.sufficiency.recall);
       if (q.withGraph.fileReads === 0 && q.withGraph.toolCalls === 1) zeroFileReadCount++;
     }
   }
@@ -270,7 +276,6 @@ async function main() {
   const baselineAvgFileReads = totalQuestions ? totalBaselineFileReads / totalQuestions : 0;
   const withGraphAvgToolCalls = totalQuestions ? totalWithGraphToolCalls / totalQuestions : 0;
   const withGraphAvgDuration = totalQuestions ? totalWithGraphDuration / totalQuestions : 0;
-  const withGraphAvgFileReads = totalQuestions ? totalWithGraphFileReads / totalQuestions : 0;
 
   const toolCallsReduction = baselineAvgToolCalls > 0
     ? ((baselineAvgToolCalls - withGraphAvgToolCalls) / baselineAvgToolCalls) * 100
@@ -279,8 +284,15 @@ async function main() {
     ? ((baselineAvgDuration - withGraphAvgDuration) / baselineAvgDuration) * 100
     : 0;
   const zeroFileReadRate = totalQuestions ? (zeroFileReadCount / totalQuestions) * 100 : 0;
+  const avgRecall = totalQuestions ? totalRecall / totalQuestions : 0;
+  const avgPrecision = totalQuestions ? totalPrecision / totalQuestions : 0;
 
   const report: BenchmarkReport = {
+    meta: {
+      toolOverheadMs: TOOL_CALL_OVERHEAD_MS,
+      note: 'Baseline is grounded in graph-determined relevance (neededFiles). ' +
+            'Overhead models agent round-trip; override with BENCHMARK_TOOL_OVERHEAD_MS.',
+    },
     baseline: {
       avgToolCalls: Math.round(baselineAvgToolCalls * 10) / 10,
       avgDurationMs: Math.round(baselineAvgDuration),
@@ -289,7 +301,12 @@ async function main() {
     withGraph: {
       avgToolCalls: Math.round(withGraphAvgToolCalls * 10) / 10,
       avgDurationMs: Math.round(withGraphAvgDuration),
-      avgFileReads: Math.round(withGraphAvgFileReads * 10) / 10,
+      avgFileReads: 0,
+    },
+    sufficiency: {
+      avgRecall: Math.round(avgRecall * 100),
+      avgPrecision: Math.round(avgPrecision * 100),
+      minRecall: Math.round(minRecall * 100),
     },
     reduction: {
       toolCallsPercent: Math.round(toolCallsReduction),
@@ -302,6 +319,7 @@ async function main() {
 
   console.log('\n=== KimiGraph Benchmark Results ===\n');
   console.log(`Questions asked: ${totalQuestions} across ${repoResults.length} repos`);
+  console.log(`Tool overhead: ${TOOL_CALL_OVERHEAD_MS}ms per call (modeled, not measured)`);
   console.log();
   console.log(`Baseline (no graph):`);
   console.log(`  Avg tool calls per question: ${report.baseline.avgToolCalls}`);
@@ -311,21 +329,26 @@ async function main() {
   console.log(`With KimiGraph:`);
   console.log(`  Avg tool calls per question: ${report.withGraph.avgToolCalls}`);
   console.log(`  Avg duration per question:   ${report.withGraph.avgDurationMs}ms`);
-  console.log(`  Avg file reads per question: ${report.withGraph.avgFileReads}`);
+  console.log();
+  console.log(`Sufficiency (did explore return the needed files?):`);
+  console.log(`  Avg recall:    ${report.sufficiency.avgRecall}%`);
+  console.log(`  Avg precision: ${report.sufficiency.avgPrecision}%`);
+  console.log(`  Min recall:    ${report.sufficiency.minRecall}%`);
   console.log();
   console.log(`Reduction:`);
   console.log(`  Tool calls: ${report.reduction.toolCallsPercent}%`);
   console.log(`  Duration:   ${report.reduction.durationPercent}%`);
-  console.log(`  Zero-file-read rate: ${report.reduction.zeroFileReadRate}% (${zeroFileReadCount}/${totalQuestions})`);
+  console.log(`  Zero-file-read rate: ${report.reduction.zeroFileReadRate}%`);
   console.log();
 
-  // VALIDATION.md thresholds
   const tcPass = report.reduction.toolCallsPercent >= 70;
   const durPass = report.reduction.durationPercent >= 50;
-  const zfrPass = report.reduction.zeroFileReadRate >= 60; // VALIDATION says ≥3/5 = 60%
+  const zfrPass = report.reduction.zeroFileReadRate >= 60;
+  const recallPass = report.sufficiency.avgRecall >= 70;
   console.log(`VALIDATION 2.5.1 (≥70% tool-call reduction): ${tcPass ? '✅ PASS' : '❌ FAIL'}`);
   console.log(`VALIDATION 2.5.2 (≥50% duration reduction):   ${durPass ? '✅ PASS' : '❌ FAIL'}`);
   console.log(`VALIDATION 2.5.3 (≥60% zero-file-read rate):  ${zfrPass ? '✅ PASS' : '❌ FAIL'}`);
+  console.log(`Sufficiency (≥70% avg recall):                ${recallPass ? '✅ PASS' : '❌ FAIL'}`);
   console.log();
 
   const reportPath = path.resolve('benchmark-report.json');

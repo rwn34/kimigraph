@@ -34,3 +34,5 @@ npm-debug.log*
 # Environment
 .env
 .env.local
+
+benchmark-report.json
