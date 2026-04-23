@@ -357,10 +357,24 @@ program
     }
 
     config.mcpServers = config.mcpServers || {};
-    config.mcpServers.kimigraph = {
-      command: 'npx',
-      args: ['rwn-kimigraph@latest', 'serve', '--mcp'],
-    };
+
+    // Detect how to invoke kimigraph reliably on this machine.
+    // Priority: global CLI > local project install > npx fallback
+    let command: string;
+    let args: string[];
+
+    try {
+      const globalCmd = process.platform === 'win32' ? 'where.exe kimigraph' : 'which kimigraph';
+      require('child_process').execSync(globalCmd, { stdio: 'ignore' });
+      command = 'kimigraph';
+      args = ['serve', '--mcp'];
+    } catch {
+      // Global CLI not in PATH — use npx so users don't need global install
+      command = 'npx';
+      args = ['--yes', 'rwn-kimigraph', 'serve', '--mcp'];
+    }
+
+    config.mcpServers.kimigraph = { command, args };
 
     fs.writeFileSync(mcpPath, JSON.stringify(config, null, 2), 'utf8');
     console.log(`Added KimiGraph to ${mcpPath}`);

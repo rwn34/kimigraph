@@ -72,10 +72,21 @@ kimigraph index
 npm run download-model
 
 # Connect to Kimi CLI
-kimigraph install
+kimigraph install-mcp
 ```
 
 Restart Kimi CLI. Kimi will automatically use `kimigraph_explore` as its primary exploration tool (via `.kimi/AGENTS.md` instructions).
+
+### MCP setup details
+
+`kimigraph install-mcp` writes a config file at `~/.kimi/mcp.json` that tells Kimi how to start the KimiGraph MCP server. It auto-detects the best invocation method for your system:
+
+| Scenario | Config written | Why |
+|----------|---------------|-----|
+| `kimigraph` is in PATH (global install) | `kimigraph serve --mcp` | Fastest — no `npx` overhead |
+| `kimigraph` not in PATH (local install, npx, or Windows without global npm bin in PATH) | `npx --yes rwn-kimigraph serve --mcp` | Works without global install; auto-downloads on first use |
+
+If `kimi` reports `Invalid JSON: Unexpected UTF-8 BOM`, the config file was written with a BOM. Delete `~/.kimi/mcp.json` and re-run `kimigraph install-mcp`.
 
 ---
 
