@@ -178,22 +178,31 @@ npm pack --dry-run 2>&1 | tail -5
 
 ## 7. Sign-Off Log
 
-| Phase | Date | Validator | All Criteria Pass? |
-|-------|------|-----------|-------------------|
-| Phase 1 | 2026-04-21 | Kimi | ✅ Yes |
-| Phase 2 | — | — | 🔄 In progress — reliability fixes complete, awaiting manual validation of agent behavior criteria |
-| Phase 3 | — | — | ⏸️ Blocked until Phase 2 passes |
+| Phase | Date | Validator | Status |
+|-------|------|-----------|--------|
+| Phase 1 | 2026-04-21 | Kimi | ✅ Complete |
+| Phase 2 — Reliability | 2026-04-21 | Kimi | ✅ Complete (batching, polling fallback, truncation warning, cycle dedup, silent catches) |
+| Phase 2 — Agent behavior (2.3.2, 2.3.3) | — | — | 🔄 Needs 10-min manual test (run Kimi, observe first tool call) |
+| Phase 2 — Benchmark claims (2.5.1–2.5.3) | — | — | ⏸️ Blocked — requires agent-in-the-loop harness; cannot be automated in a script |
+| Phase 3 | — | — | ⏸️ Blocked until Phase 2 agent-behavior criteria pass |
 
 ---
 
 ## 8. Reference Commands for Validation
 
-### How to validate `kimigraph_explore` manually
+### How to validate 2.3.2 (agent uses explore first) manually
 
 1. Start MCP server: `npm run mcp`
 2. In a Kimi session with `.kimigraph/` initialized, ask: "How does the database layer work?"
 3. Check that first tool call is `kimigraph_explore`, not `ReadFile` or `Grep`.
 4. Check that the response contains full source sections, not just node names.
+
+### How to validate 2.3.3 (agent avoids grep for symbol lookup) manually
+
+1. Start MCP server: `npm run mcp`
+2. In a Kimi session with `.kimigraph/` initialized, ask: "Find the function that handles auth"
+3. Check that Kimi uses `kimigraph_search` or `kimigraph_explore`, NOT `Grep`.
+4. If Kimi uses `Grep`, check that `.kimi/AGENTS.md` exists and contains the exploration guidelines.
 
 ### How to validate hook-based sync manually
 
@@ -205,7 +214,22 @@ npm pack --dry-run 2>&1 | tail -5
 6. Run `kimigraph stats` within 5 seconds.
 7. Check that node count decreased.
 
-### How to validate benchmarks manually
+### How to validate 2.5.1–2.5.3 (tool-call / duration / zero-file-read reduction)
+
+**These cannot be validated by `npm run benchmark`.** The benchmark is a performance profiler only.
+
+To validate 2.5.1–2.5.3 you need agent-in-the-loop testing:
+
+1. Set up a test repo with `.kimigraph/` initialized.
+2. Run a scripted Kimi session (or capture transcripts) with a set of exploration questions.
+3. Count tool calls in the transcript: `ReadFile`, `Grep`, `Glob` vs `kimigraph_*`.
+4. Measure wall-clock duration per question (from first prompt to final answer).
+5. Compute: tool-call reduction %, duration reduction %, zero-file-read rate.
+6. Repeat WITHOUT `.kimigraph/` as baseline.
+
+This is future work. Until then, 2.5.1–2.5.3 remain unvalidated.
+
+### How to run the performance profiler
 
 ```bash
 npm run benchmark
