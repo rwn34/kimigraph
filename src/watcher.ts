@@ -170,7 +170,8 @@ export class GraphWatcher {
       this.dirty = false;
       try {
         await this.onSync();
-      } catch {
+      } catch (err) {
+        logWarn('Sync failed:', err instanceof Error ? err.message : String(err));
         // If sync fails, mark dirty again to retry later
         this.dirty = true;
       }
