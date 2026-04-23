@@ -6,8 +6,22 @@
 import * as path from 'path';
 import * as os from 'os';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const { pipeline, env } = require('@huggingface/transformers');
+let transformersLib: any = null;
+
+function loadTransformers(): { pipeline: any; env: any } {
+  if (transformersLib) return transformersLib;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    transformersLib = require('@huggingface/transformers');
+  } catch {
+    throw new Error(
+      '@huggingface/transformers is not installed. ' +
+      'Install it with: npm install @huggingface/transformers ' +
+      'Or disable embeddings in your KimiGraph config.'
+    );
+  }
+  return transformersLib;
+}
 
 const DEFAULT_MODEL = 'nomic-ai/nomic-embed-text-v1.5';
 const EMBEDDING_DIM = 768;
@@ -16,6 +30,7 @@ const DEFAULT_BATCH_SIZE = 32;
 /** Configure Transformers.js to use local cache. */
 function setupCacheDir(): void {
   const cacheDir = path.join(os.homedir(), '.kimigraph', 'models');
+  const { env } = loadTransformers();
   env.cacheDir = cacheDir;
 }
 
@@ -47,6 +62,7 @@ export class EmbeddingModel {
 
   private async doLoad(): Promise<void> {
     try {
+      const { pipeline } = loadTransformers();
       this.embedder = await pipeline('feature-extraction', this.modelName, {
         dtype: 'fp32',
       });

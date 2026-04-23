@@ -119,4 +119,30 @@ describe('KimiGraph watch integration', () => {
     expect(kg.isDirty()).toBe(false);
   });
 
+  it('handles file deletions during sync', async () => {
+    const fileToDelete = path.join(FIXTURE_DIR, 'temp.ts');
+    fs.writeFileSync(
+      fileToDelete,
+      `export function temporary() { return 42; }\n`,
+      'utf8'
+    );
+
+    const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
+    await kg.indexAll();
+
+    const statsBefore = kg.getStats();
+    expect(statsBefore.nodes).toBeGreaterThan(0);
+
+    // Delete the file
+    fs.rmSync(fileToDelete);
+
+    // Sync should detect deletion and remove nodes
+    const result = await kg.sync();
+    expect(result.filesRemoved).toBeGreaterThanOrEqual(1);
+
+    const statsAfter = kg.getStats();
+    expect(statsAfter.nodes).toBeLessThan(statsBefore.nodes);
+
+    kg.close();
+  });
 });

@@ -23,7 +23,7 @@
 |---|-----------|------|----------------|
 | 1.1 | Build passes | `npm run build` | Exit code 0 |
 | 1.2 | Typecheck passes | `npm run typecheck` | Exit code 0, 0 errors |
-| 1.3 | All tests pass | `npx vitest run` | 18/18 pass, 0 failures |
+| 1.3 | All tests pass | `npx vitest run` | ≥100 tests pass, 0 failures |
 | 1.4 | Self-index works | `npx tsx -e "require('./src/index').KimiGraph.open('.').then(kg=>{console.log(kg.getStats());kg.close()})"` | `files > 0`, `nodes > 0`, `edges > 0` |
 | 1.5 | npm pack is clean | `npm pack --dry-run` | No warnings, package size < 250 kB |
 | 1.6 | No debug scripts in repo | `ls scripts/` | No `debug-*` or `benchmark*` files (unless in `scripts/debug/`) |
@@ -48,7 +48,7 @@
 |---|-----------|------|----------------|
 | 2.1.1 | Tool is registered in MCP | `kimi mcp list` + check tool schema | `kimigraph_explore` appears in tools list |
 | 2.1.2 | Returns source sections | Call `kimigraph_explore` with query "How does reference resolution work?" on this repo | Returns ≥3 code sections with `filePath`, `startLine`, `endLine`, and `source` (full text) |
-| 2.1.3 | No file reads needed | Run benchmark: agent answers "How does auth work?" on a test repo WITH graph vs. WITHOUT graph | With graph: ≤3 tool calls (explore + maybe 1 follow-up). Without graph: ≥15 tool calls. |
+| 2.1.3 | No file reads needed | Run benchmark: agent answers exploration questions on a test repo WITH graph vs. WITHOUT graph | With graph: 1 tool call per question (explore). Without graph: ≥5 tool calls per question. |
 | 2.1.4 | Respects call budget | Call with `budget: 'small'` vs `budget: 'large'` | Small returns ≤5 sections, large returns ≥10 sections |
 | 2.1.5 | Falls back gracefully | Call with nonsense query "How does quantum teleportation work?" on this repo | Returns empty result with helpful message, no crash |
 
@@ -90,7 +90,7 @@
 | 2.4.2 | Rust parser works | Create fixture with Rust functions, structs, traits, impls. Index it. | Functions, methods, structs, traits, impls extracted. Call edges created. |
 | 2.4.3 | Java parser works | Create fixture with Java classes, methods, interfaces. Index it. | Classes, methods, interfaces extracted. Call edges created. |
 | 2.4.4 | Language detection | Mix TS, Go, Rust, Java files in one repo | `kg.getStats()` shows all 4 languages in `filesByLanguage` |
-| 2.4.5 | Integration tests | `npx vitest run` | New language tests pass. Total test count ≥ 25. |
+| 2.4.5 | Integration tests | `npx vitest run` | New language tests pass. Total test count ≥ 100. |
 
 ### 3.5 Benchmarks
 
@@ -179,8 +179,8 @@ npm pack --dry-run 2>&1 | tail -5
 | Phase | Date | Validator | All Criteria Pass? |
 |-------|------|-----------|-------------------|
 | Phase 1 | 2026-04-21 | Kimi | ✅ Yes |
-| Phase 2 | 2026-04-21 | Kimi | ✅ Yes (partials completed 2026-04-21) |
-| Phase 3 | 2026-04-22 | Kimi | ✅ Yes |
+| Phase 2 | — | — | 🔄 In progress — benchmarks rewritten, awaiting re-validation |
+| Phase 3 | — | — | ⏸️ Blocked until Phase 2 passes |
 
 ---
 

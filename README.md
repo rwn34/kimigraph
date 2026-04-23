@@ -36,7 +36,7 @@ KimiGraph builds a pre-computed graph of your code:
 - **Full-text index** — FTS5 over names, signatures, and docstrings
 - **Semantic vectors** — 768-dim embeddings for natural-language symbol search
 
-Then it exposes that graph to Kimi through 8 MCP tools.
+Then it exposes that graph to Kimi through 11 MCP tools.
 
 ---
 
