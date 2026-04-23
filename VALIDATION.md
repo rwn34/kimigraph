@@ -209,10 +209,31 @@ npm pack --dry-run 2>&1 | tail -5
 
 ```bash
 npm run benchmark
-# Expected output:
+# Expected output (performance profile — NOT a baseline comparison):
 # {
-#   "baseline": { "avgToolCalls": 42, "avgDurationMs": 85000 },
-#   "withGraph": { "avgToolCalls": 8, "avgDurationMs": 25000 },
-#   "reduction": { "toolCalls": "81%", "duration": "71%" }
+#   "results": [
+#     {
+#       "project": "ts-api",
+#       "totalFiles": 12,
+#       "structuralIndexMs": 1500,
+#       "embeddingIndexMs": 3200,
+#       "queries": [
+#         {
+#           "query": "How does authMiddleware verify tokens?",
+#           "latencyMs": 45,
+#           "entryPoints": 3,
+#           "relatedNodes": 7,
+#           "filesCovered": 4,
+#           "strategyBreakdown": { "exact": 1, "fts": 2, "semantic": 3 }
+#         }
+#       ],
+#       "avgQueryLatencyMs": 45
+#     }
+#   ],
+#   "avgLatency": 45,
+#   "generatedAt": "2026-04-21T10:00:00.000Z"
 # }
+#
+# NOTE: This measures query latency and file coverage. Tool-call reduction
+# vs. baseline agent behavior requires real agent integration testing.
 ```

@@ -131,6 +131,8 @@ KimiGraph installs via npm. Native dependencies (`better-sqlite3`, `sqlite-vec`)
 | `kimigraph_impact` | What's affected by a change | "What breaks if I change this?" |
 | `kimigraph_node` | Get a single symbol's details + source | "Show me the implementation" |
 | `kimigraph_path` | Shortest path between two symbols | "How does A reach B?" |
+| `kimigraph_dead_code` | Find symbols with zero incoming edges (experimental) | "Find unused code" |
+| `kimigraph_cycles` | Find circular dependency chains (experimental) | "Find circular imports" |
 | `kimigraph_status` | Check index health and stats | "Is the graph up to date?" |
 
 ---
