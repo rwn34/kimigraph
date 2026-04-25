@@ -8,7 +8,6 @@ import { StdioTransport, ErrorCodes, JsonRpcMessage } from './transport';
 import { tools, ToolHandler } from './tools';
 
 const SERVER_INFO = { name: 'kimigraph', version: process.env.KIMIGRAPH_VERSION || require('../../package.json').version };
-const PROTOCOL_VERSION = '2024-11-05';
 
 export class MCPServer {
   private transport = new StdioTransport();
@@ -69,7 +68,7 @@ export class MCPServer {
           await this.tryInit(this.projectPath);
         }
         return {
-          protocolVersion: PROTOCOL_VERSION,
+          protocolVersion: req.params?.protocolVersion || '2024-11-05',
           capabilities: { tools: {} },
           serverInfo: SERVER_INFO,
         };
