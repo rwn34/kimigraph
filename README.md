@@ -365,7 +365,7 @@ Measured on 4 repos (TypeScript API, Go CLI, Rust library, and self):
 | Avg query latency | **< 100ms** |
 | Embedding overhead vs structural | **~1.5×** (100 files, warmed model) |
 | Indexing with embeddings | **< 5s** for 100 files |
-| Test coverage | **110 tests** across 24 test files |
+| Test coverage | **118 tests** across 25 test files |
 
 Run yourself: `npm run benchmark`
 
