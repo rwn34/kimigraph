@@ -1,6 +1,6 @@
 {
   "name": "rwn-kimigraph",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Local-first semantic code knowledge graph for Kimi Code CLI",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
