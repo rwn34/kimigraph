@@ -76,6 +76,11 @@ export async function extractFromSource(
     };
   }
 
+  // Protobuf files — regex-based extraction (no tree-sitter grammar needed)
+  if (lowerPath.endsWith('.proto')) {
+    return extractProto(filePath, source);
+  }
+
   try {
     const grammar = await loadGrammar(lang);
     const parser = new Parser();
@@ -838,13 +843,63 @@ class Extractor {
 
   private extractSignature(node: SyntaxNode): string | undefined {
     const paramTypes = ['formal_parameters', 'parameter_list', 'parameters'];
+    let params: string | undefined;
     for (let i = 0; i < node.childCount; i++) {
       const child = node.child(i);
       if (child && paramTypes.includes(child.type)) {
-        return child.text;
+        params = child.text;
+        break;
       }
     }
-    return undefined;
+    if (!params) return undefined;
+
+    // Try to extract return type from common AST patterns
+    const returnType = this.extractReturnType(node);
+    if (returnType) {
+      return `${params} -> ${returnType}`;
+    }
+    return params;
+  }
+
+  private extractReturnType(node: SyntaxNode): string | undefined {
+    // Language-specific return type extraction
+    const returnTypePatterns: string[] = [];
+
+    for (let i = 0; i < node.childCount; i++) {
+      const child = node.child(i);
+      if (!child) continue;
+
+      // TypeScript/JS: type_annotation (return type, not parameter type)
+      if (child.type === 'type_annotation') {
+        // Strip leading ': ' to normalize
+        const cleaned = child.text.replace(/^:\s*/, '').trim();
+        if (cleaned) returnTypePatterns.push(cleaned);
+      }
+      // Python: type (after ->)
+      if (this.language === 'python' && child.type === 'type') {
+        returnTypePatterns.push(child.text);
+      }
+      // Go: type (after params)
+      if (this.language === 'go' && child.type === 'type') {
+        returnTypePatterns.push(child.text);
+      }
+      // Rust: return_type
+      if (child.type === 'return_type') {
+        returnTypePatterns.push(child.text);
+      }
+      // Java/C#/C/C++: type identifier before name, but return type after params is usually in modifiers/type
+      if (['java', 'csharp', 'c', 'cpp'].includes(this.language) && child.type === 'type') {
+        returnTypePatterns.push(child.text);
+      }
+    }
+
+    // For languages where return type precedes the name (Java, C#, C, C++, Go),
+    // it's already visible in the declaration; skip to avoid duplication
+    if (['java', 'csharp', 'c', 'cpp'].includes(this.language)) {
+      return undefined;
+    }
+
+    return returnTypePatterns[0] ?? undefined;
   }
 
   private extractDocstring(node: SyntaxNode): string | undefined {
@@ -991,16 +1046,60 @@ class Extractor {
       return true;
     }
 
+    // Ruby: methods are public by default; no reliable static visibility analysis
+    if (this.language === 'ruby') {
+      return true;
+    }
+
+    // PHP: check visibility_modifier child for public/protected
+    if (this.language === 'php') {
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && child.type === 'visibility_modifier') {
+          const text = child.text;
+          if (text === 'public' || text === 'protected') return true;
+        }
+      }
+    }
+
+    // Swift: public/open modifiers indicate exported API
+    if (this.language === 'swift') {
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && (child.type === 'modifiers' || child.type === 'modifier')) {
+          const text = child.text;
+          if (text === 'public' || text === 'open') return true;
+        }
+      }
+    }
+
+    // Kotlin: public/protected/internal modifiers (default is public)
+    if (this.language === 'kotlin') {
+      let hasModifier = false;
+      for (let i = 0; i < node.childCount; i++) {
+        const child = node.child(i);
+        if (child && (child.type === 'modifiers' || child.type === 'modifier')) {
+          hasModifier = true;
+          const text = child.text;
+          if (text === 'public' || text === 'protected' || text === 'internal') return true;
+        }
+      }
+      // No visibility modifier = public by default in Kotlin
+      if (!hasModifier) return true;
+    }
+
     return false;
   }
 
   private getEnclosingClassName(node: SyntaxNode): string | null {
     const classTypes = [
       'class_declaration', 'class_definition', 'struct_item', 'class_specifier',
-      'struct_specifier', 'enum_declaration', 'enum_item',
+      'struct_specifier', 'enum_declaration', 'enum_item', 'class',
+      'struct_declaration', 'object_declaration', 'module',
     ];
     const interfaceTypes = [
       'interface_declaration', 'trait_item', 'interface_definition', 'interface_specifier',
+      'protocol_declaration',
     ];
     let current: SyntaxNode | null = node;
     while (current) {
@@ -1016,4 +1115,126 @@ class Extractor {
     }
     return null;
   }
+}
+
+// ============================================================================
+// PROTOBUF EXTRACTION (regex-based, no tree-sitter grammar needed)
+// ============================================================================
+
+function extractProto(filePath: string, source: string): ExtractionResult {
+  const nodes: Node[] = [];
+  const edges: Edge[] = [];
+  const fileNodeId = `file:${filePath}`;
+  const lines = source.split('\n');
+
+  nodes.push({
+    id: fileNodeId,
+    kind: 'file',
+    name: path.basename(filePath),
+    filePath,
+    startLine: 1,
+    endLine: lines.length,
+    language: 'protobuf' as Language,
+    updatedAt: Date.now(),
+  });
+
+  // message MessageName { ... }
+  const messageRegex = /message\s+(\w+)\s*\{/g;
+  let m: RegExpExecArray | null;
+  while ((m = messageRegex.exec(source)) !== null) {
+    const name = m[1];
+    const line = source.slice(0, m.index).split('\n').length;
+    const id = `class:${filePath}:${name}:${line}`;
+    nodes.push({
+      id,
+      kind: 'class',
+      name,
+      filePath,
+      startLine: line,
+      endLine: line,
+      language: 'protobuf' as Language,
+      isExported: true,
+      updatedAt: Date.now(),
+    });
+    edges.push({ source: fileNodeId, target: id, kind: 'contains' as EdgeKind });
+  }
+
+  // enum EnumName { ... }
+  const enumRegex = /enum\s+(\w+)\s*\{/g;
+  while ((m = enumRegex.exec(source)) !== null) {
+    const name = m[1];
+    const line = source.slice(0, m.index).split('\n').length;
+    const id = `enum:${filePath}:${name}:${line}`;
+    nodes.push({
+      id,
+      kind: 'enum',
+      name,
+      filePath,
+      startLine: line,
+      endLine: line,
+      language: 'protobuf' as Language,
+      isExported: true,
+      updatedAt: Date.now(),
+    });
+    edges.push({ source: fileNodeId, target: id, kind: 'contains' as EdgeKind });
+  }
+
+  // service ServiceName { rpc MethodName(Request) returns (Response); }
+  const serviceRegex = /service\s+(\w+)\s*\{/g;
+  while ((m = serviceRegex.exec(source)) !== null) {
+    const serviceName = m[1];
+    const serviceLine = source.slice(0, m.index).split('\n').length;
+    const serviceId = `class:${filePath}:${serviceName}:${serviceLine}`;
+    nodes.push({
+      id: serviceId,
+      kind: 'class',
+      name: serviceName,
+      filePath,
+      startLine: serviceLine,
+      endLine: serviceLine,
+      language: 'protobuf' as Language,
+      isExported: true,
+      updatedAt: Date.now(),
+    });
+    edges.push({ source: fileNodeId, target: serviceId, kind: 'contains' as EdgeKind });
+
+    // Find RPC methods inside this service block
+    const blockStart = m.index + m[0].length;
+    let braceDepth = 1;
+    let blockEnd = blockStart;
+    for (let i = blockStart; i < source.length && braceDepth > 0; i++) {
+      if (source[i] === '{') braceDepth++;
+      if (source[i] === '}') braceDepth--;
+      if (braceDepth > 0) blockEnd = i;
+    }
+    const serviceBody = source.slice(blockStart, blockEnd + 1);
+
+    const rpcRegex = /rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s*\(\s*(\w+)\s*\)/g;
+    let rpcM: RegExpExecArray | null;
+    while ((rpcM = rpcRegex.exec(serviceBody)) !== null) {
+      const rpcName = rpcM[1];
+      const reqType = rpcM[2];
+      const respType = rpcM[3];
+      const rpcLine = serviceLine + serviceBody.slice(0, rpcM.index).split('\n').length;
+      const rpcId = `method:${filePath}:${rpcName}:${rpcLine}`;
+      nodes.push({
+        id: rpcId,
+        kind: 'method',
+        name: rpcName,
+        filePath,
+        startLine: rpcLine,
+        endLine: rpcLine,
+        language: 'protobuf' as Language,
+        signature: `(${reqType}) -> ${respType}`,
+        isExported: true,
+        updatedAt: Date.now(),
+      });
+      edges.push({ source: serviceId, target: rpcId, kind: 'contains' as EdgeKind });
+      // Reference edges to request/response message types (if indexed)
+      edges.push({ source: rpcId, target: reqType, kind: 'calls' as EdgeKind });
+      edges.push({ source: rpcId, target: respType, kind: 'calls' as EdgeKind });
+    }
+  }
+
+  return { nodes, edges, unresolvedRefs: [], errors: [] };
 }

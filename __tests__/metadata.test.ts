@@ -47,7 +47,7 @@ class Greeter {
     const result = await extractFromSource('meta.ts', code, 'typescript');
     const fn = result.nodes.find((n) => n.name === 'greet');
     expect(fn).toBeDefined();
-    expect(fn!.signature).toBe('(name: string, age: number)');
+    expect(fn!.signature).toBe('(name: string, age: number) -> string');
   });
 
   it('detects public classes and methods in Java', async () => {

@@ -39,6 +39,11 @@ const LANGUAGE_MAP: Record<KimiGraphLanguage, string> = {
   c: 'tree-sitter-c.wasm',
   cpp: 'tree-sitter-cpp.wasm',
   csharp: 'tree-sitter-c_sharp.wasm',
+  ruby: 'tree-sitter-ruby.wasm',
+  php: 'tree-sitter-php.wasm',
+  swift: 'tree-sitter-swift.wasm',
+  kotlin: 'tree-sitter-kotlin.wasm',
+  protobuf: '', // handled by regex-based extractor, no WASM grammar
 };
 
 const loadedLanguages = new Map<KimiGraphLanguage, Language>();

@@ -3,8 +3,8 @@ import { KimiGraph } from '../src/index';
 import * as path from 'path';
 import * as fs from 'fs';
 
-const PROJECT_ROOT = path.join(__dirname, '..');
-const SELF_INDEX_DIR = path.join(PROJECT_ROOT, '.kimigraph');
+const PROJECT_ROOT = path.join(__dirname, '..', 'src');
+const SELF_INDEX_DIR = path.join(path.join(__dirname, '..'), '.kimigraph');
 
 describe('Self-index', () => {
   let kg: KimiGraph;
@@ -12,7 +12,8 @@ describe('Self-index', () => {
   beforeAll(async () => {
     // Ensure a clean state
     fs.rmSync(SELF_INDEX_DIR, { recursive: true, force: true });
-    kg = await KimiGraph.init(PROJECT_ROOT, { embedSymbols: false });
+    fs.rmSync(path.join(PROJECT_ROOT, '.kimigraph'), { recursive: true, force: true });
+    kg = await KimiGraph.init(PROJECT_ROOT, { embedSymbols: false, languages: ['typescript', 'javascript'] });
     await kg.indexAll();
   }, 30000);
 

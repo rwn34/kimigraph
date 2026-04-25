@@ -59,9 +59,37 @@ describe('Multi-language indexing', () => {
       `using System;\nclass Program { static void Main() { Console.WriteLine("hello"); } }\n`,
       'utf8'
     );
+
+    // Ruby
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'app.rb'),
+      `class App\n  def greet\n    puts "hello"\n  end\nend\n`,
+      'utf8'
+    );
+
+    // PHP
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'index.php'),
+      `<?php\nfunction greet() { echo "hello"; }\n`,
+      'utf8'
+    );
+
+    // Swift
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'main.swift'),
+      `func greet() { print("hello") }\n`,
+      'utf8'
+    );
+
+    // Kotlin
+    fs.writeFileSync(
+      path.join(FIXTURE_DIR, 'Main.kt'),
+      `fun main() { println("hello") }\n`,
+      'utf8'
+    );
   });
 
-  it('indexes all 9 languages', async () => {
+  it('indexes all 13 languages', async () => {
     const kg = await KimiGraph.init(FIXTURE_DIR, { embedSymbols: false });
     await kg.indexAll();
 
@@ -75,9 +103,13 @@ describe('Multi-language indexing', () => {
     expect(langs).toContain('c');
     expect(langs).toContain('cpp');
     expect(langs).toContain('csharp');
+    expect(langs).toContain('ruby');
+    expect(langs).toContain('php');
+    expect(langs).toContain('swift');
+    expect(langs).toContain('kotlin');
 
-    expect(stats.files).toBe(7);
-    expect(stats.nodes).toBeGreaterThanOrEqual(7);
+    expect(stats.files).toBe(11);
+    expect(stats.nodes).toBeGreaterThanOrEqual(11);
 
     kg.close();
   });

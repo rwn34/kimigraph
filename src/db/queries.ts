@@ -191,6 +191,37 @@ export class QueryBuilder {
     return rows.map(this.rowToNode);
   }
 
+  searchBySignature(paramTypes: string[], returnType: string | null, opts: SearchOptions = {}): Node[] {
+    const { kinds, languages, limit = 20 } = opts;
+    const conditions: string[] = ['signature IS NOT NULL'];
+    const params: unknown[] = [];
+
+    for (const pt of paramTypes) {
+      conditions.push('signature LIKE ?');
+      params.push(`%${pt}%`);
+    }
+    if (returnType) {
+      conditions.push('signature LIKE ?');
+      params.push(`%${returnType}%`);
+    }
+
+    if (kinds && kinds.length > 0) {
+      conditions.push(`kind IN (${kinds.map(() => '?').join(',')})`);
+      params.push(...kinds);
+    }
+    if (languages && languages.length > 0) {
+      conditions.push(`language IN (${languages.map(() => '?').join(',')})`);
+      params.push(...languages);
+    }
+    params.push(limit);
+
+    const rows = this.db.all<RawNode>(
+      `SELECT * FROM nodes WHERE ${conditions.join(' AND ')} LIMIT ?`,
+      params
+    );
+    return rows.map(this.rowToNode);
+  }
+
   deleteNodesByFile(filePath: string): void {
     const ids = this.db.all<{ id: string }>('SELECT id FROM nodes WHERE file_path = ?', [filePath]);
     if (ids.length === 0) return;

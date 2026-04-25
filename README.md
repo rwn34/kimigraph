@@ -74,6 +74,11 @@ Everything stays on your machine. No cloud service, no API keys, no telemetry.
 | C | `.c` `.h` | ✅ |
 | C++ | `.cpp` `.cc` `.cxx` `.hpp` `.hxx` | ✅ |
 | C# | `.cs` | ✅ |
+| Ruby | `.rb` | ✅ |
+| PHP | `.php` | ✅ |
+| Swift | `.swift` | ✅ |
+| Kotlin | `.kt` `.kts` | ✅ |
+| Protobuf | `.proto` | ✅ (messages, services, RPCs) |
 
 Mixed-language repositories are fully supported.
 
@@ -126,6 +131,7 @@ KimiGraph exposes 11 MCP tools. Kimi uses them automatically (via `.kimi/AGENTS.
 | `kimigraph_dead_code` | Symbols with zero incoming references (experimental) | "Find unused code" |
 | `kimigraph_cycles` | Circular dependency chains (experimental) | "Find circular imports" |
 | `kimigraph_status` | Check index health and stats | "Is the graph up to date?" |
+| `kimigraph_signature_search` | Find functions by type signature (e.g. `string -> boolean`) | "Find functions that take a string and return a bool" |
 
 ---
 
@@ -359,7 +365,7 @@ Measured on 4 repos (TypeScript API, Go CLI, Rust library, and self):
 | Avg query latency | **< 100ms** |
 | Embedding overhead vs structural | **~1.5×** (100 files, warmed model) |
 | Indexing with embeddings | **< 5s** for 100 files |
-| Test coverage | **108 tests** across 22 test files |
+| Test coverage | **110 tests** across 24 test files |
 
 Run yourself: `npm run benchmark`
 
@@ -391,7 +397,7 @@ Run yourself: `npm run benchmark`
 **Phase 4 — Broader (v0.3.1) ✅**
 - [x] C / C++ / C# languages (9 total)
 
-**Phase 5 — Deepen (v0.4) 🎯**
+**Phase 5 — Deepen (v0.4)**
 - [x] Index all comments for richer semantic search
 - [x] Extract anonymous functions with synthetic names
 - [x] Detect JS-side WASM / Node-API imports statically
@@ -409,9 +415,9 @@ Run yourself: `npm run benchmark`
 - [x] Expose `findPath` as `kimigraph_path` MCP tool
 - [x] NodeKind governance test (enforces ≤15 kinds hard limit)
 - [x] Incremental embedding updates (only re-embed changed symbols)
-- [ ] Type-aware search (find by signature: `"User -> string"`)
-- [ ] Cross-language resolution (WASM → C++ symbols, protobuf boundaries)
-- [ ] More languages (Ruby, PHP, Swift, Kotlin)
+- [x] Type-aware search (find by signature: `"User -> string"`)
+- [x] Cross-language resolution (protobuf messages, services, and RPCs; WASM FFI edges)
+- [x] More languages (Ruby, PHP, Swift, Kotlin)
 
 > See `PLAN.md` for detailed direction, decision log, and validation criteria.
 

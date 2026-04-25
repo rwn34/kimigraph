@@ -210,9 +210,13 @@ export class ReferenceResolver {
       this.parseJavaImports(source, map);
     } else if (ext === '.rs') {
       this.parseRustImports(source, map);
+    } else if (ext === '.rb') {
+      this.parseRubyImports(source, map);
+    } else if (ext === '.php') {
+      this.parsePhpImports(source, map);
     }
-    // C# imports are namespace-based and don't map 1:1 to files;
-    // fall back to global unique match for C#
+    // C#, Swift, Kotlin imports are namespace/module-based and don't map 1:1 to files;
+    // fall back to global unique match for these languages
 
     this.importMapCache.set(filePath, map);
     return map;
@@ -354,6 +358,32 @@ export class ReferenceResolver {
     }
   }
 
+  private parseRubyImports(source: string, map: Map<string, string>): void {
+    // require_relative 'path/to/file' — only relative paths map to files
+    const relRequireRegex = /require_relative\s+['"]([^'"]+)['"]/g;
+    let m: RegExpExecArray | null;
+    while ((m = relRequireRegex.exec(source)) !== null) {
+      const reqPath = m[1];
+      // Map the basename (without extension) to the require path
+      const baseName = path.basename(reqPath, '.rb');
+      map.set(baseName, reqPath);
+    }
+  }
+
+  private parsePhpImports(source: string, map: Map<string, string>): void {
+    // use Namespace\SubNamespace\ClassName; or use Namespace\ClassName as Alias;
+    const useRegex = /^use\s+([\w\\]+)(?:\s+as\s+(\w+))?;/gm;
+    let m: RegExpExecArray | null;
+    while ((m = useRegex.exec(source)) !== null) {
+      const fqName = m[1];
+      const alias = m[2];
+      const segments = fqName.split('\\');
+      const className = alias ?? segments[segments.length - 1];
+      const relPath = segments.join('/');
+      map.set(className, relPath);
+    }
+  }
+
   private resolveModuleToFile(moduleSource: string, fromFile: string): string | null {
     const ext = path.extname(fromFile).toLowerCase();
 
@@ -390,6 +420,14 @@ export class ReferenceResolver {
       extCandidates.push('.java');
     } else if (ext === '.rs') {
       extCandidates.push('.rs');
+    } else if (ext === '.rb') {
+      extCandidates.push('.rb');
+    } else if (ext === '.php') {
+      extCandidates.push('.php');
+    } else if (ext === '.swift') {
+      extCandidates.push('.swift');
+    } else if (ext === '.kt' || ext === '.kts') {
+      extCandidates.push('.kt', '.kts');
     } else {
       // JS/TS
       extCandidates.push('.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs');
@@ -400,7 +438,7 @@ export class ReferenceResolver {
       candidates.push(path.join(sourceDir, moduleSource + e));
     }
     // Index files for JS/TS
-    if (!['.py', '.go', '.java', '.rs'].includes(ext)) {
+    if (!['.py', '.go', '.java', '.rs', '.rb', '.php', '.swift', '.kt', '.kts'].includes(ext)) {
       for (const e of ['.ts', '.tsx', '.js', '.jsx']) {
         candidates.push(path.join(sourceDir, moduleSource, 'index' + e));
       }

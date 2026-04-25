@@ -464,6 +464,28 @@ export class KimiGraph {
     return this.contextBuilder.buildContext(task, opts);
   }
 
+  searchBySignature(query: string, opts?: SearchOptions): SearchResult[] {
+    // Parse signature query: "User -> string" or "string, int -> bool" or "-> void"
+    const arrowIndex = query.indexOf('->');
+    let paramTypes: string[] = [];
+    let returnType: string | null = null;
+
+    if (arrowIndex >= 0) {
+      const paramPart = query.slice(0, arrowIndex).trim();
+      returnType = query.slice(arrowIndex + 2).trim() || null;
+      if (paramPart) {
+        paramTypes = paramPart.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+    } else {
+      // No arrow: treat entire query as parameter type search
+      paramTypes = query.split(',').map((s) => s.trim()).filter(Boolean);
+    }
+
+    const limit = opts?.limit ?? 10;
+    const nodes = this.queries.searchBySignature(paramTypes, returnType, { ...opts, limit });
+    return nodes.map((node) => ({ node, score: 1.0 }));
+  }
+
   getNode(id: string): Node | null {
     return this.queries.getNode(id);
   }

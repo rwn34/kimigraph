@@ -66,6 +66,19 @@ export const tools: ToolDefinition[] = [
     },
   },
   {
+    name: 'kimigraph_signature_search',
+    description: 'Find functions/methods by their type signature. Query format: \"paramType1, paramType2 -> returnType\". Example: \"string -> boolean\" finds functions taking a string and returning a bool. Use -> to separate params from return type.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Signature query, e.g. "User -> string" or "int, int -> int" or "-> void"' },
+        limit: { type: 'number', description: 'Max results 1-100 (default: 10)', default: 10 },
+        projectPath: { type: 'string', description: 'Project root path (optional)' },
+      },
+      required: ['query'],
+    },
+  },
+  {
     name: 'kimigraph_context',
     description: 'PRIMARY TOOL: Build comprehensive context for a task or feature request. Returns entry points, related symbols, and key code — often enough to understand the codebase without additional tool calls.',
     inputSchema: {
@@ -308,6 +321,15 @@ export class ToolHandler {
         if (results.length === 0) return `No symbols found matching "${args.query}".`;
         return results.map((r) =>
           `${mapKind(r.node.kind)} ${r.node.name}\n  File: ${r.node.filePath}:${r.node.startLine}`
+        ).join('\n\n');
+      }
+
+      case 'kimigraph_signature_search': {
+        const limit = clampLimit(args.limit as number | undefined, 10);
+        const results = kg.searchBySignature(args.query as string, { limit, kinds: ['function', 'method'] });
+        if (results.length === 0) return `No functions found matching signature "${args.query}".`;
+        return results.map((r) =>
+          `${mapKind(r.node.kind)} ${r.node.name}${r.node.signature ? ` — ${r.node.signature}` : ''}\n  File: ${r.node.filePath}:${r.node.startLine}`
         ).join('\n\n');
       }
 

@@ -39,7 +39,7 @@ export type EdgeKind =
 // LANGUAGES
 // ============================================================================
 
-export type Language = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'java' | 'c' | 'cpp' | 'csharp';
+export type Language = 'typescript' | 'javascript' | 'python' | 'go' | 'rust' | 'java' | 'c' | 'cpp' | 'csharp' | 'ruby' | 'php' | 'swift' | 'kotlin' | 'protobuf';
 
 export const LANGUAGE_EXTENSIONS: Record<Language, string[]> = {
   typescript: ['.ts', '.tsx'],
@@ -51,6 +51,11 @@ export const LANGUAGE_EXTENSIONS: Record<Language, string[]> = {
   c: ['.c', '.h'],
   cpp: ['.cpp', '.cc', '.cxx', '.hpp', '.hxx'],
   csharp: ['.cs'],
+  ruby: ['.rb'],
+  php: ['.php'],
+  swift: ['.swift'],
+  kotlin: ['.kt', '.kts'],
+  protobuf: ['.proto'],
 };
 
 export function detectLanguage(filePath: string): Language | null {
@@ -271,7 +276,7 @@ export interface KimiGraphConfig {
 
 export const DEFAULT_CONFIG: KimiGraphConfig = {
   version: 1,
-  languages: ['typescript', 'javascript', 'python', 'go', 'rust', 'java', 'c', 'cpp', 'csharp'],
+  languages: ['typescript', 'javascript', 'python', 'go', 'rust', 'java', 'c', 'cpp', 'csharp', 'ruby', 'php', 'swift', 'kotlin', 'protobuf'],
   exclude: [
     'node_modules/**',
     'dist/**',
