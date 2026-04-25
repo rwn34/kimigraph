@@ -394,10 +394,10 @@ Run yourself: `npm run benchmark`
 - [x] Natural-language symbol lookup fallback
 - [x] `better-sqlite3` driver migration
 
-**Phase 4 — Broader (v0.3.1) ✅**
+**Phase 4 — Broader (v0.2.x) ✅**
 - [x] C / C++ / C# languages (9 total)
 
-**Phase 5 — Deepen (v0.4)**
+**Phase 5 — Deepen (v0.3.0) ✅**
 - [x] Index all comments for richer semantic search
 - [x] Extract anonymous functions with synthetic names
 - [x] Detect JS-side WASM / Node-API imports statically
