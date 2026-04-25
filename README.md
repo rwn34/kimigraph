@@ -72,21 +72,21 @@ kimigraph index
 npm run download-model
 
 # Connect to Kimi CLI
-kimigraph install-mcp
+kimigraph install
 ```
 
 Restart Kimi CLI. Kimi will automatically use `kimigraph_explore` as its primary exploration tool (via `.kimi/AGENTS.md` instructions).
 
 ### MCP setup details
 
-`kimigraph install-mcp` writes a config file at `~/.kimi/mcp.json` that tells Kimi how to start the KimiGraph MCP server. It auto-detects the best invocation method for your system:
+`kimigraph install` writes a config file at `~/.kimi/mcp.json` that tells Kimi how to start the KimiGraph MCP server. It auto-detects the best invocation method for your system:
 
 | Scenario | Config written | Why |
 |----------|---------------|-----|
 | `kimigraph` is in PATH (global install) | `kimigraph serve --mcp` | Fastest — no `npx` overhead |
 | `kimigraph` not in PATH (local install, npx, or Windows without global npm bin in PATH) | `npx --yes rwn-kimigraph serve --mcp` | Works without global install; auto-downloads on first use |
 
-If `kimi` reports `Invalid JSON: Unexpected UTF-8 BOM`, the config file was written with a BOM. Delete `~/.kimi/mcp.json` and re-run `kimigraph install-mcp`.
+If `kimi` reports `Invalid JSON: Unexpected UTF-8 BOM`, the config file was written with a BOM. Delete `~/.kimi/mcp.json` and re-run `kimigraph install`.
 
 ---
 
@@ -348,6 +348,17 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Embedding staleness** | Semantic embeddings are computed once on indexing; editing a function body without changing its signature does not recompute embeddings | ⚠️ **Known limitation** — semantic search may return stale embeddings for heavily edited code |
 | **`kimigraph_cycles`** | Circular dependency detection works for static `import`/`extends`/`implements` edges only; dynamic/runtime cycles (e.g., event-driven, lazy `require`) are invisible | ⚠️ **Known limitation** — treat as advisory, not definitive |
 | **`kimigraph_dead_code`** | Dead-code detection flags symbols with zero incoming edges, but barrel exports, dynamic dispatch, and framework-driven entry points (e.g., React components, HTTP handlers) create false positives | ⚠️ **Known limitation** — treat as advisory, not definitive; always verify before removing |
+
+### Installation warnings (harmless upstream deprecations)
+
+During `npm install` you may see two deprecation warnings. These are from transitive dependencies of packages we do not control:
+
+| Warning | Source | Status |
+|---------|--------|--------|
+| `prebuild-install@7.1.3` deprecated | `better-sqlite3` → `prebuild-install` | Upstream — `better-sqlite3` v12.9.0 is latest stable; we evaluated `libsql` as replacement but it has Windows file-locking issues |
+| `boolean@3.2.0` deprecated | `@huggingface/transformers` → `onnxruntime-node` → `global-agent` → `boolean` | Upstream — no maintained replacement exists |
+
+Both packages still function correctly. We will migrate away when upstream provides stable alternatives.
 
 ### Performance notes
 

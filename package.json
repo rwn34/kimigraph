@@ -44,7 +44,7 @@
     "web-tree-sitter": "^0.25.3"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "^4.1.0"
+    "@huggingface/transformers": "^4.2.0"
   },
   "devDependencies": {
     "@types/node": "^20.17.0",
