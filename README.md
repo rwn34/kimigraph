@@ -292,7 +292,7 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | Feature | Detail |
 |---------|--------|
 | Structural queries | Callers, callees, impact radius, shortest path, dead code |
-| Multi-language | 9 languages with mixed-language repo support |
+| Multi-language | 13 languages with mixed-language repo support |
 | Search | Exact name → FTS5 → semantic (natural language) → LIKE fallback |
 | Exploration | `kimigraph_explore` returns full source sections in one call |
 | Auto-sync | File watcher + pre-query sync keeps graph fresh |
@@ -334,6 +334,8 @@ KimiGraph replaces **most** file reads during exploration, but not all. Here is 
 | **Embedding staleness** | Semantic embeddings are computed once on indexing; editing a function body without changing its signature does not recompute embeddings | ⚠️ **Known limitation** — semantic search may return stale embeddings for heavily edited code |
 | **`kimigraph_cycles`** | Circular dependency detection works for static `import`/`extends`/`implements` edges only; dynamic/runtime cycles are invisible | ⚠️ **Known limitation** — treat as advisory, not definitive |
 | **`kimigraph_dead_code`** | Dead-code detection flags symbols with zero incoming edges, but barrel exports, dynamic dispatch, and framework-driven entry points create false positives | ⚠️ **Known limitation** — treat as advisory, not definitive; always verify before removing |
+| **Windows indexing OOM** | On Windows, parsing many languages (10+ WASM grammars) can exhaust V8 zone memory during `kimigraph init` / `kimigraph index`. Data commits before the crash, so the index is usable. | 🟡 **Workaround available** — run with `--max-old-space-size=4096` (see Troubleshooting) |
+| **Kotlin interface detection** | The Kotlin tree-sitter grammar uses `class_declaration` for both classes and interfaces; they are indistinguishable via query | ⚠️ **Known limitation** — all Kotlin interfaces captured as `class` kind |
 
 ### Installation warnings (harmless upstream deprecations)
 
@@ -481,6 +483,20 @@ The watcher auto-syncs within 2 seconds of file changes. If you edit outside the
 
 **`Invalid JSON: Unexpected UTF-8 BOM`**
 Delete `~/.kimi/mcp.json` and re-run `kimigraph install`. The config file was written with a BOM.
+
+**Windows: `Fatal process out of memory: Zone` during indexing**
+On Windows, loading many tree-sitter WASM grammars can exhaust V8's zone allocator. The index data is committed before the crash, so the graph is usable, but the error is alarming.
+
+Workaround — increase Node's old-space size:
+```bash
+node --max-old-space-size=4096 ./node_modules/.bin/kimigraph index
+```
+Or set it permanently in your shell profile:
+```bash
+export NODE_OPTIONS="--max-old-space-size=4096"
+```
+
+We are investigating root causes (likely grammar accumulation; see [#5](https://github.com/rwn34/kimigraph/issues/5)).
 
 ---
 
