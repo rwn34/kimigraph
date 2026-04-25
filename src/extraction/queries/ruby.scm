@@ -2,7 +2,7 @@
 ;; Extracts methods, classes, modules, calls, and imports
 
 ; ============================================================================
-; METHOD DEFINITIONS
+; TOP-LEVEL METHOD DEFINITIONS (treated as functions)
 ; ============================================================================
 
 (method
@@ -12,6 +12,26 @@
 (singleton_method
   name: (identifier) @function.name
 ) @function.definition
+
+; ============================================================================
+; METHODS INSIDE CLASSES / MODULES
+; ============================================================================
+
+(class
+  body: (body_statement
+    (method
+      name: (identifier) @method.name
+    ) @method.definition
+  )
+)
+
+(module
+  body: (body_statement
+    (method
+      name: (identifier) @method.name
+    ) @method.definition
+  )
+)
 
 ; ============================================================================
 ; CLASS DEFINITIONS

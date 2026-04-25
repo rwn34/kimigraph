@@ -1,8 +1,8 @@
 ;; Swift Tree-sitter queries for KimiGraph
-;; Extracts functions, classes, protocols, and calls
+;; Extracts functions, classes, protocols, structs, calls, and imports
 
 ; ============================================================================
-; FUNCTION DEFINITIONS
+; FUNCTION DEFINITIONS (top-level and methods — extractor distinguishes)
 ; ============================================================================
 
 (function_declaration
@@ -42,3 +42,11 @@
 ; ============================================================================
 
 (comment) @comment.definition
+
+; ============================================================================
+; IMPORTS
+; ============================================================================
+
+(import_declaration
+  (identifier) @import.source
+) @import.statement

@@ -420,6 +420,12 @@ class Extractor {
 
   private addFunction(nameNode: SyntaxNode, defNode: SyntaxNode): void {
     const name = nameNode.text;
+    // If inside a class/interface/protocol/struct/module, treat as method
+    const className = this.getEnclosingClassName(defNode);
+    if (className) {
+      this.addMethod(nameNode, defNode);
+      return;
+    }
     const id = this.makeId('function', name, nameNode.startPosition.row + 1);
     const node: Node = {
       id,
@@ -1051,13 +1057,13 @@ class Extractor {
       return true;
     }
 
-    // PHP: check visibility_modifier child for public/protected
+    // PHP: check visibility_modifier child for public only
     if (this.language === 'php') {
       for (let i = 0; i < node.childCount; i++) {
         const child = node.child(i);
         if (child && child.type === 'visibility_modifier') {
           const text = child.text;
-          if (text === 'public' || text === 'protected') return true;
+          if (text === 'public') return true;
         }
       }
     }
@@ -1075,17 +1081,27 @@ class Extractor {
 
     // Kotlin: public/protected/internal modifiers (default is public)
     if (this.language === 'kotlin') {
-      let hasModifier = false;
+      let hasVisibilityModifier = false;
       for (let i = 0; i < node.childCount; i++) {
         const child = node.child(i);
-        if (child && (child.type === 'modifiers' || child.type === 'modifier')) {
-          hasModifier = true;
-          const text = child.text;
-          if (text === 'public' || text === 'protected' || text === 'internal') return true;
+        if (child && child.type === 'modifiers') {
+          // modifiers node may contain multiple modifier children
+          for (let j = 0; j < child.childCount; j++) {
+            const mod = child.child(j);
+            if (mod) {
+              const text = mod.text;
+              if (text === 'public' || text === 'protected' || text === 'internal') {
+                return true;
+              }
+              if (text === 'private') {
+                hasVisibilityModifier = true;
+              }
+            }
+          }
         }
       }
-      // No visibility modifier = public by default in Kotlin
-      if (!hasModifier) return true;
+      // No explicit visibility modifier = public by default in Kotlin
+      if (!hasVisibilityModifier) return true;
     }
 
     return false;

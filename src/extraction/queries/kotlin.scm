@@ -1,8 +1,8 @@
 ;; Kotlin Tree-sitter queries for KimiGraph
-;; Extracts functions, classes, objects, and calls
+;; Extracts functions, classes, objects, calls, and imports
 
 ; ============================================================================
-; FUNCTION DEFINITIONS
+; FUNCTION DEFINITIONS (top-level and methods — extractor distinguishes)
 ; ============================================================================
 
 (function_declaration
