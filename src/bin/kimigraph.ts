@@ -359,7 +359,7 @@ program
     config.mcpServers = config.mcpServers || {};
 
     // Detect how to invoke kimigraph reliably on this machine.
-    // Priority: global CLI > local project install > npx fallback
+    // Priority: global CLI in PATH > direct node path (Windows) > npx fallback (Unix)
     let command: string;
     let args: string[];
 
@@ -369,9 +369,25 @@ program
       command = 'kimigraph';
       args = ['serve', '--mcp'];
     } catch {
-      // Global CLI not in PATH — use npx so users don't need global install
-      command = 'npx';
-      args = ['--yes', 'rwn-kimigraph', 'serve', '--mcp'];
+      // Global CLI not in PATH
+      if (process.platform === 'win32') {
+        // npx breaks MCP stdio transport on Windows (creates wrapper processes).
+        // Use direct node path to global install instead.
+        try {
+          const globalRoot = require('child_process').execSync('npm root -g', { encoding: 'utf8' }).trim();
+          const jsPath = path.join(globalRoot, 'rwn-kimigraph', 'dist', 'bin', 'kimigraph.js');
+          command = 'node';
+          args = [jsPath, 'serve', '--mcp'];
+        } catch {
+          // Global install not found either — fall back to npx as last resort
+          command = 'npx';
+          args = ['--yes', 'rwn-kimigraph', 'serve', '--mcp'];
+        }
+      } else {
+        // Unix: npx works fine with MCP stdio
+        command = 'npx';
+        args = ['--yes', 'rwn-kimigraph', 'serve', '--mcp'];
+      }
     }
 
     config.mcpServers.kimigraph = { command, args };
