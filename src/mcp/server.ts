@@ -25,7 +25,22 @@ export class MCPServer {
     this.transport.start(this.handleMessage.bind(this));
     process.on('SIGINT', () => this.stop());
     process.on('SIGTERM', () => this.stop());
-    process.stdin.on('end', () => this.stop());
+
+    // Windows spawn implementations sometimes set stdin to 'ignore' or immediately
+    // emit 'end' before any message is sent. Only exit on stdin end if we have
+    // actually received at least one message (normal disconnect). Otherwise stay
+    // alive so the client can retry or properly initialize.
+    let hadMessage = false;
+    const markActive = () => { hadMessage = true; };
+    process.stdin.on('data', markActive);
+    process.stdin.on('end', () => {
+      process.stdin.off('data', markActive);
+      if (hadMessage) {
+        this.stop();
+      } else {
+        process.stderr.write('[KimiGraph MCP] stdin closed before any message — ignoring (possible Windows spawn issue)\n');
+      }
+    });
   }
 
   private async tryInit(projectPath: string): Promise<void> {
