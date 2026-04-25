@@ -182,9 +182,10 @@ npm pack --dry-run 2>&1 | tail -5
 |-------|------|-----------|--------|
 | Phase 1 | 2026-04-21 | Kimi | ✅ Complete |
 | Phase 2 — Reliability | 2026-04-21 | Kimi | ✅ Complete (batching, polling fallback, truncation warning, cycle dedup, silent catches) |
-| Phase 2 — Agent behavior (2.3.2, 2.3.3) | — | — | 🔄 Needs 10-min manual test (run Kimi, observe first tool call) |
+| Phase 2 — Agent behavior (2.3.2, 2.3.3) | 2026-04-25 | rwn34 | ✅ Validated — Kimi calls `kimigraph_explore` first; uses `kimigraph_search` instead of `Grep` |
 | Phase 2 — Benchmark claims (2.5.1–2.5.3) | — | — | ⏸️ Blocked — requires agent-in-the-loop harness; cannot be automated in a script |
-| Phase 3 | — | — | ⏸️ Blocked until Phase 2 agent-behavior criteria pass |
+| Phase 2 — All 11 MCP tools functional | 2026-04-25 | rwn34 | ✅ Validated — systematic tool exercise confirms all tools respond correctly |
+| Phase 3 | — | — | 🔄 Unblocked — Phase 2 reliability + agent-behavior complete; benchmark claims remain future work |
 
 ---
 
