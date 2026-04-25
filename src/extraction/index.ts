@@ -113,7 +113,6 @@ export async function extractFromSource(
     extractor.processCaptures(captures);
 
     parser.delete();
-    query.delete();
     tree.delete();
 
     return {

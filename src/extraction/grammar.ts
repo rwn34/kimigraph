@@ -47,6 +47,7 @@ const LANGUAGE_MAP: Record<KimiGraphLanguage, string> = {
 };
 
 const loadedLanguages = new Map<KimiGraphLanguage, Language>();
+const loadedQueries = new Map<string, Query>();
 let parserInitDone = false;
 
 export async function initGrammars(): Promise<void> {
@@ -96,9 +97,16 @@ export function getSupportedLanguages(): KimiGraphLanguage[] {
 }
 
 export function loadQuery(language: Language, queryPath: string): Query {
+  const cacheKey = `${(language as any).name ?? 'lang'}::${queryPath}`;
+  if (loadedQueries.has(cacheKey)) {
+    return loadedQueries.get(cacheKey)!;
+  }
+
   if (!fs.existsSync(queryPath)) {
     throw new Error(`Query file not found: ${queryPath}`);
   }
   const querySource = fs.readFileSync(queryPath, 'utf8');
-  return new Query(language, querySource);
+  const query = new Query(language, querySource);
+  loadedQueries.set(cacheKey, query);
+  return query;
 }

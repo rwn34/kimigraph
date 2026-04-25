@@ -41,7 +41,7 @@
     "picomatch": "^4.0.2",
     "sqlite-vec": "^0.1.9",
     "tree-sitter-wasms": "^0.1.11",
-    "web-tree-sitter": "^0.25.3"
+    "web-tree-sitter": "^0.25.10"
   },
   "optionalDependencies": {
     "@huggingface/transformers": "^4.2.0"
